@@ -1,40 +1,41 @@
-# OrganizeALot v2.1.0 Build 023 — Test Build
+# OrganizeALot v2.1.0 Build 023 — Story Transition Test
 
-Build 022 remains the locked working baseline. Build 023 is a separate test build.
+Build 022 remains the locked working baseline. This is a separate Build 023 test update.
 
-## New in Build 023
+## Critical Story-Transition Fix
 
-- Added a default 2D, one-dimensional measurement sketch for NIIS reference entry.
-- Enter each wall run as Forward, Right, Back, or Left.
-- Fast command entry supports phrases such as: `Forward 16, Right 4, Forward 16, Left 4, Forward 16`.
-- Voice measurement entry is available when the browser supports speech recognition.
-- Multiple separately calculated sections support:
-  - Main house living area
-  - Detached guest house / other living area
-  - Attached garage
-  - Covered porch
-  - Deck / uncovered porch
-  - Detached garage
-  - Outbuildings 1, 2, 3, etc.
-- Story/level multiplier calculates total square footage for one-story, two-story, and split sections.
-- Automatic footprint area and category totals.
+Build 023 now treats a change from two stories to one story as a change **within the same house**, not as a new sketch or separate building.
+
+- Say `Begin 1 story` at the corner where the lower section starts.
+- The next wall measurements are recorded as one-story walls.
+- Say `Begin 2 story` when the perimeter returns to the taller section.
+- The sketch marks each transition point and labels the one-story and two-story areas.
+- When the outline is closed, the app connects the transition points with an internal divider and calculates each footprint separately.
+- Example: a 600 sq ft two-story section plus a 200 sq ft one-story section is counted as 1,400 sq ft of living area.
+- Each measurement in the list shows the story level that applies to that wall run.
+
+## Voice Entry
+
+- `write` and `rite` are corrected to `Right` while entering sketch commands.
+- Story changes and measurements are preserved in the order spoken.
+- Example: `17 feet forward, begin 1 story, 12 feet right` records 17 feet at the existing story level, changes at that corner, then records 12 feet as one story.
+- Spoken number words such as `one`, `seventeen`, `forty`, and `one hundred` are supported.
+
+## Other Build 023 Features
+
+- 2D Forward, Right, Back, and Left measurement sketch for NIIS reference entry.
+- Separate structures for garages, porches, decks, guest houses, and numbered outbuildings.
 - Downloadable SVG sketch and print view.
-- Waze remains available from the new-inspection screen and inside each inspection.
-- Six newest inspections stay in Resume Inspections; older inspections appear under Archived Inspections.
-- Unlimited photos per checklist item with preview, Use Photo, Retake, notes, and Delete Photo beneath each stored photo.
-- Preferred Reports includes a 13-section photo workflow.
-- Optional full-size browser download after Use Photo.
-
-## Important Android Gallery Limitation
-
-This web/PWA build can trigger a separate downloaded copy. Direct automatic saving to `Pictures/OrganizeALot/<Inspection ID>` requires the later native Android APK build.
+- Waze from the new-inspection screen and inside each inspection.
+- Six newest inspections in Resume Inspections with older records archived.
+- Unlimited photos per checklist item with preview, retake, notes, and deletion.
+- Preferred Reports 13-section workflow and OBS exterior-only workflow.
 
 ## Test Focus
 
-1. Create a residential inspection with an Inspection ID and address.
-2. Open 2D Sketch.
-3. Add a main-house section and enter a complete perimeter.
-4. Test a jog such as `Forward 16, Right 4, Forward 16, Left 4, Forward 16`.
-5. Add separate one-story and two-story sections and confirm square footage totals.
-6. Add garage, covered porch, deck, detached garage, guest house, and outbuilding sections.
-7. Save, close, reopen, and confirm sketch measurements remain.
+1. Start one Main House structure at two stories.
+2. Enter the taller-section wall measurements.
+3. At the correct corner, enter or say `Begin 1 story` and continue around the lower addition.
+4. Enter or say `Begin 2 story` where the perimeter returns to the taller section.
+5. Close the outline.
+6. Confirm the sketch displays separate `1 Story` and `2 Story` areas and the total square footage is correct.

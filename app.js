@@ -167,97 +167,307 @@ async function usePendingPhoto(){
 }
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
-function ensureSketch(){if(!state.current.shapes)state.current.shapes=[];if(!state.current.shapes.length)addDefaultShape();}
-function addDefaultShape(){
-  const shape={id:uid('shape'),name:'Main House - 1 Story Section',type:'main_living',stories:1,segments:[]};state.current.shapes.push(shape);return shape;
+function normalizeShape(shape){
+  if(!shape)return shape;
+  shape.segments=Array.isArray(shape.segments)?shape.segments:[];
+  shape.stories=Math.max(.25,Number(shape.stories)||1);
+  shape.segments.forEach(seg=>{seg.stories=Math.max(.25,Number(seg.stories)||shape.stories);});
+  const lastStory=shape.segments.length?Number(shape.segments[shape.segments.length-1].stories):shape.stories;
+  shape.activeStories=Math.max(.25,Number(shape.activeStories)||lastStory||shape.stories);
+  return shape;
 }
-function selectedShape(){ensureSketch();const id=$('shapeSelect').value;return state.current.shapes.find(s=>s.id===id)||state.current.shapes[0];}
+function ensureSketch(){
+  if(!state.current.shapes)state.current.shapes=[];
+  state.current.shapes.forEach(normalizeShape);
+  if(!state.current.shapes.length)addDefaultShape();
+}
+function addDefaultShape(){
+  const shape={id:uid('shape'),name:'Main House',type:'main_living',stories:1,activeStories:1,segments:[]};
+  state.current.shapes.push(shape);return shape;
+}
+function selectedShape(){
+  ensureSketch();const id=$('shapeSelect').value;
+  return normalizeShape(state.current.shapes.find(s=>s.id===id)||state.current.shapes[0]);
+}
 function renderSketch(){
   if(!state.current)return;ensureSketch();
-  const select=$('shapeSelect');const previous=select.value;select.innerHTML='';state.current.shapes.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;select.appendChild(o);});
+  const select=$('shapeSelect');const previous=select.value;select.innerHTML='';
+  state.current.shapes.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;select.appendChild(o);});
   select.value=state.current.shapes.some(s=>s.id===previous)?previous:state.current.shapes[0].id;
   loadShapeForm();drawSketch();renderSegmentList();renderTotals();
 }
-function loadShapeForm(){const s=selectedShape();if(!s)return;$('shapeName').value=s.name;$('shapeType').value=s.type;$('shapeStories').value=s.stories;}
-function createShape(){
-  const name=$('shapeName').value.trim()||`Section ${state.current.shapes.length+1}`;const type=$('shapeType').value;const stories=Math.max(.25,Number($('shapeStories').value)||1);
-  const shape={id:uid('shape'),name,type,stories,segments:[]};state.current.shapes.push(shape);saveInspection();renderSketch();$('shapeSelect').value=shape.id;loadShapeForm();drawSketch();renderSegmentList();
+function loadShapeForm(){
+  const s=selectedShape();if(!s)return;
+  $('shapeName').value=s.name;$('shapeType').value=s.type;$('shapeStories').value=s.activeStories;
+  updateCurrentStoryMessage();
 }
-function updateShape(){const s=selectedShape();if(!s)return;s.name=$('shapeName').value.trim()||s.name;s.type=$('shapeType').value;s.stories=Math.max(.25,Number($('shapeStories').value)||1);saveInspection();renderSketch();$('shapeSelect').value=s.id;loadShapeForm();}
-function addSegment(dir,feet){
-  const s=selectedShape();const f=Number(feet);if(!s||!DIRS[dir]||!Number.isFinite(f)||f<=0)return false;s.segments.push({dir,feet:Math.round(f*100)/100});saveInspection();drawSketch();renderSegmentList();renderTotals();return true;
+function updateCurrentStoryMessage(message=''){
+  const s=selectedShape();if(!s)return;
+  const base=`Next wall run: ${fmt(s.activeStories)} stor${Number(s.activeStories)===1?'y':'ies'} in the same structure.`;
+  $('commandMessage').textContent=message||base;
+}
+function createShape(){
+  const name=$('shapeName').value.trim()||`Section ${state.current.shapes.length+1}`;
+  const type=$('shapeType').value;const stories=Math.max(.25,Number($('shapeStories').value)||1);
+  const shape={id:uid('shape'),name,type,stories,activeStories:stories,segments:[]};
+  state.current.shapes.push(shape);saveInspection();renderSketch();$('shapeSelect').value=shape.id;loadShapeForm();drawSketch();renderSegmentList();renderTotals();
+}
+function setActiveStories(stories,{announce=true}={}){
+  const s=selectedShape();if(!s)return false;
+  const next=Math.max(.25,Number(stories)||1);const previous=Number(s.activeStories)||Number(s.stories)||1;
+  s.activeStories=next;
+  if(!s.segments.length)s.stories=next;
+  $('shapeStories').value=next;saveInspection();
+  if(announce){
+    const location=s.segments.length?'at the current corner':'at the start of this structure';
+    updateCurrentStoryMessage(`${fmt(next)}-story begins ${location}. The next wall run stays on the same house.`);
+  }
+  return previous!==next;
+}
+function updateShape(){
+  const s=selectedShape();if(!s)return;
+  s.name=$('shapeName').value.trim()||s.name;s.type=$('shapeType').value;
+  setActiveStories($('shapeStories').value,{announce:false});saveInspection();renderSketch();$('shapeSelect').value=s.id;loadShapeForm();
+  updateCurrentStoryMessage(`${fmt(s.activeStories)}-story is set for the next wall run on this same structure.`);
+}
+function addSegment(dir,feet,{refresh=true}={}){
+  const s=selectedShape();const f=Number(feet);
+  if(!s||!DIRS[dir]||!Number.isFinite(f)||f<=0)return false;
+  s.segments.push({dir,feet:Math.round(f*100)/100,stories:Math.max(.25,Number(s.activeStories)||Number(s.stories)||1)});
+  saveInspection();
+  if(refresh){drawSketch();renderSegmentList();renderTotals();loadShapeForm();}
+  return true;
+}
+const NUMBER_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,half:.5,quarter:.25};
+function replaceNumberWords(text){
+  const parts=String(text||'').toLowerCase().replace(/-/g,' ').split(/\s+/);const out=[];let value=0,active=false;
+  const flush=()=>{if(active){out.push(String(value));value=0;active=false;}};
+  for(const part of parts){
+    if(Object.hasOwn(NUMBER_WORDS,part)){value+=NUMBER_WORDS[part];active=true;continue;}
+    if(part==='hundred'){value=(value||1)*100;active=true;continue;}
+    if(part==='and'&&active)continue;
+    flush();if(part)out.push(part);
+  }
+  flush();return out.join(' ');
+}
+function cleanSpeechText(text){
+  return replaceNumberWords(text)
+    .replace(/\b(write|rite)\b/g,'right')
+    .replace(/\b(foreword|forwards|forwarded)\b/g,'forward')
+    .replace(/\b(backward|backwards)\b/g,'back')
+    .replace(/\b(right-hand side|right hand side)\b/g,'right')
+    .replace(/\b(left-hand side|left hand side)\b/g,'left')
+    .replace(/[;:]/g,',');
 }
 function parseCommand(text){
-  const normalized=String(text||'').toLowerCase().replace(/feet|foot|ft\.?/g,' ').replace(/to the /g,' ').replace(/,/g,' ');
+  const normalized=cleanSpeechText(text).replace(/\b(?:feet|foot|ft)\.?\b/g,' ').replace(/to the /g,' ').replace(/\b(go|turn|move|put|side|the|a|an|then|and)\b/g,' ').replace(/,/g,' ');
   const aliases={forward:'F',front:'F',up:'F',straight:'F',right:'R',back:'B',rear:'B',down:'B',left:'L'};
   const tokens=normalized.match(/forward|front|up|straight|right|back|rear|down|left|-?\d+(?:\.\d+)?/g)||[];
-  const commands=[];let pendingDir=null;
+  const commands=[];let pendingDir=null,pendingFeet=null;
   for(const token of tokens){
-    if(aliases[token]){pendingDir=aliases[token];continue;}
-    const n=Number(token);if(Number.isFinite(n)&&n>0){commands.push({dir:pendingDir||'F',feet:n});pendingDir=null;}
+    if(aliases[token]){
+      if(pendingFeet!==null){commands.push({dir:aliases[token],feet:pendingFeet});pendingFeet=null;pendingDir=null;}
+      else pendingDir=aliases[token];
+      continue;
+    }
+    const n=Number(token);if(!Number.isFinite(n)||n<=0)continue;
+    if(pendingDir){commands.push({dir:pendingDir,feet:n});pendingDir=null;}
+    else if(pendingFeet!==null){commands.push({dir:'F',feet:pendingFeet});pendingFeet=n;}
+    else pendingFeet=n;
   }
+  if(pendingFeet!==null)commands.push({dir:pendingDir||'F',feet:pendingFeet});
   return commands;
 }
+function parseVoiceEvents(text){
+  const cleaned=cleanSpeechText(text);const events=[];
+  const storyPattern=/\b(?:(?:begin|start|switch|change|now)(?:\s+to)?\s*)?(\d+(?:\.\d+)?)\s*(?:story|stories|level|levels)\b/gi;
+  let lastIndex=0;let match;
+  while((match=storyPattern.exec(cleaned))){
+    parseCommand(cleaned.slice(lastIndex,match.index)).forEach(c=>events.push({type:'segment',...c}));
+    events.push({type:'story',stories:Math.max(.25,Number(match[1])||1)});
+    lastIndex=storyPattern.lastIndex;
+  }
+  parseCommand(cleaned.slice(lastIndex)).forEach(c=>events.push({type:'segment',...c}));
+  return events;
+}
+function canonicalEvents(events){
+  return events.map(e=>e.type==='story'?`Begin ${fmt(e.stories)} stor${Number(e.stories)===1?'y':'ies'}`:`${fmt(e.feet)} ft ${DIRS[e.dir].label}`).join(', ');
+}
+function interpretVoice(text){
+  const events=parseVoiceEvents(text);const commands=events.filter(e=>e.type==='segment');const storyChanges=events.filter(e=>e.type==='story');
+  return {events,commands,storyChanges,canonical:canonicalEvents(events)};
+}
 function addCommand(){
-  const commands=parseCommand($('commandInput').value);if(!commands.length){$('commandMessage').textContent='No usable measurements found.';return;}
-  commands.forEach(c=>addSegment(c.dir,c.feet));$('commandMessage').textContent=`Added ${commands.length} measurement${commands.length===1?'':'s'}.`;$('commandInput').value='';
+  const result=interpretVoice($('commandInput').value);
+  if(!result.events.length){$('commandMessage').textContent='No usable measurement or story change found.';return;}
+  let measurements=0,changes=0;
+  result.events.forEach(event=>{
+    if(event.type==='story'){if(setActiveStories(event.stories,{announce:false}))changes++;}
+    else if(addSegment(event.dir,event.feet,{refresh:false}))measurements++;
+  });
+  saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
+  const parts=[];
+  if(changes)parts.push(`${changes} story transition${changes===1?'':'s'}`);
+  if(measurements)parts.push(`${measurements} measurement${measurements===1?'':'s'}`);
+  $('commandMessage').textContent=`Added ${parts.join(' and ')} to the same structure. Next wall run is ${fmt(selectedShape().activeStories)} stor${Number(selectedShape().activeStories)===1?'y':'ies'}.`;
+  $('commandInput').value='';
 }
 function pointsFor(shape){
-  const pts=[{x:0,y:0}];let x=0,y=0;shape.segments.forEach(seg=>{const d=DIRS[seg.dir];x+=d.dx*seg.feet;y+=d.dy*seg.feet;pts.push({x,y});});return pts;
+  normalizeShape(shape);const pts=[{x:0,y:0}];let x=0,y=0;
+  shape.segments.forEach(seg=>{const d=DIRS[seg.dir];x+=d.dx*seg.feet;y+=d.dy*seg.feet;pts.push({x,y});});return pts;
 }
 function isClosed(shape){const p=pointsFor(shape);const a=p[0],b=p[p.length-1];return p.length>2&&Math.abs(a.x-b.x)<.01&&Math.abs(a.y-b.y)<.01;}
-function footprintArea(shape){
-  const p=pointsFor(shape);if(p.length<4)return 0;let area=0;for(let i=0;i<p.length;i++){const a=p[i],b=p[(i+1)%p.length];area+=a.x*b.y-b.x*a.y;}return Math.abs(area)/2;
+function polygonArea(points){
+  if(points.length<3)return 0;let area=0;
+  for(let i=0;i<points.length;i++){const a=points[i],b=points[(i+1)%points.length];area+=a.x*b.y-b.x*a.y;}
+  return Math.abs(area)/2;
 }
-function calculatedArea(shape){return footprintArea(shape)*(Number(shape.stories)||1);}
+function footprintArea(shape){return polygonArea(pointsFor(shape));}
+function polygonCentroid(points){
+  if(!points.length)return{x:0,y:0};let crossSum=0,cx=0,cy=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length],cross=a.x*b.y-b.x*a.y;
+    crossSum+=cross;cx+=(a.x+b.x)*cross;cy+=(a.y+b.y)*cross;
+  }
+  if(Math.abs(crossSum)<.0001)return{x:points.reduce((n,p)=>n+p.x,0)/points.length,y:points.reduce((n,p)=>n+p.y,0)/points.length};
+  return{x:cx/(3*crossSum),y:cy/(3*crossSum)};
+}
+function storyRuns(shape){
+  normalizeShape(shape);const n=shape.segments.length;if(!n)return[];
+  const stories=shape.segments.map(seg=>Math.max(.25,Number(seg.stories)||shape.stories));
+  const basePoints=pointsFor(shape).slice(0,n);
+  let firstChange=-1;
+  for(let i=0;i<n;i++){if(stories[i]!==stories[(i-1+n)%n]){firstChange=i;break;}}
+  if(firstChange<0){return[{stories:stories[0],segmentIndexes:[...Array(n).keys()],points:pointsFor(shape)}];}
+  const runs=[];let run=null;
+  for(let step=0;step<n;step++){
+    const index=(firstChange+step)%n;const story=stories[index];
+    if(!run||run.stories!==story){if(run)runs.push(run);run={stories:story,segmentIndexes:[],points:[basePoints[index]]};}
+    run.segmentIndexes.push(index);run.points.push(basePoints[(index+1)%n]);
+  }
+  if(run)runs.push(run);return runs;
+}
+function storyCalculation(shape){
+  normalizeShape(shape);const footprint=footprintArea(shape);const runs=storyRuns(shape);
+  if(!runs.length)return{footprint,total:0,regions:[],valid:false,reason:'No wall runs entered.'};
+  const unique=[...new Set(runs.map(r=>r.stories))];
+  if(unique.length===1){
+    const region={...runs[0],area:footprint,centroid:polygonCentroid(pointsFor(shape))};
+    return{footprint,total:footprint*unique[0],regions:[region],valid:true,reason:''};
+  }
+  if(!isClosed(shape)){
+    return{footprint,total:0,regions:runs.map(r=>({...r,area:0,centroid:polygonCentroid(r.points)})),valid:false,reason:'Close the outline to calculate the 1-story and 2-story sections.'};
+  }
+  const regions=runs.map(r=>({...r,area:polygonArea(r.points),centroid:polygonCentroid(r.points)}));
+  const regionArea=regions.reduce((sum,r)=>sum+r.area,0);const tolerance=Math.max(1,footprint*.02);
+  const valid=Math.abs(regionArea-footprint)<=tolerance;
+  return{
+    footprint,
+    total:valid?regions.reduce((sum,r)=>sum+r.area*r.stories,0):0,
+    regions,
+    valid,
+    reason:valid?'':'The story divider could not be resolved. Use one “Begin 1 story” point and one return transition around each addition.'
+  };
+}
+function calculatedArea(shape){return storyCalculation(shape).total;}
 function closeShape(){
   const s=selectedShape();const pts=pointsFor(s);const end=pts[pts.length-1];if(Math.abs(end.x)<.01&&Math.abs(end.y)<.01)return;
-  if(Math.abs(end.x)>.01)addSegment(end.x>0?'L':'R',Math.abs(end.x));
-  if(Math.abs(end.y)>.01)addSegment(end.y>0?'F':'B',Math.abs(end.y));
+  if(Math.abs(end.x)>.01)addSegment(end.x>0?'L':'R',Math.abs(end.x),{refresh:false});
+  if(Math.abs(end.y)>.01)addSegment(end.y>0?'F':'B',Math.abs(end.y),{refresh:false});
+  saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
 }
-function undoSegment(){const s=selectedShape();if(!s?.segments.length)return;s.segments.pop();saveInspection();drawSketch();renderSegmentList();renderTotals();}
-function clearShape(){const s=selectedShape();if(!s||!confirm(`Clear all measurements from ${s.name}?`))return;s.segments=[];saveInspection();drawSketch();renderSegmentList();renderTotals();}
+function undoSegment(){
+  const s=selectedShape();if(!s?.segments.length)return;s.segments.pop();
+  s.activeStories=s.segments.length?Number(s.segments[s.segments.length-1].stories):Number(s.stories)||1;
+  saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
+}
+function clearShape(){
+  const s=selectedShape();if(!s||!confirm(`Clear all measurements from ${s.name}?`))return;
+  s.segments=[];s.activeStories=s.stories;saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
+}
 function deleteShape(){
-  const s=selectedShape();if(!s||!confirm(`Delete ${s.name}?`))return;state.current.shapes=state.current.shapes.filter(x=>x.id!==s.id);if(!state.current.shapes.length)addDefaultShape();saveInspection();renderSketch();
+  const s=selectedShape();if(!s||!confirm(`Delete ${s.name}?`))return;
+  state.current.shapes=state.current.shapes.filter(x=>x.id!==s.id);if(!state.current.shapes.length)addDefaultShape();saveInspection();renderSketch();
 }
 function calculateTotals(shapes){
   const totals={main_living:0,other_living:0,attached_garage:0,covered_porch:0,deck:0,detached_garage:0,outbuilding:0};
   shapes.forEach(s=>{totals[s.type]=(totals[s.type]||0)+calculatedArea(s);});return totals;
 }
+function storyFill(stories,selected){
+  const opacity=selected?.22:.13;const hue=Number(stories)===1?142:Number(stories)===2?207:Number(stories)===3?272:35;
+  return `hsla(${hue},70%,50%,${opacity})`;
+}
+function storyTransitions(shape){
+  normalizeShape(shape);const transitions=[];const n=shape.segments.length;if(!n)return transitions;
+  for(let i=1;i<n;i++){
+    const current=Number(shape.segments[i].stories),previous=Number(shape.segments[i-1].stories);
+    if(current!==previous)transitions.push({vertexIndex:i,stories:current});
+  }
+  if(isClosed(shape)&&Number(shape.segments[0].stories)!==Number(shape.segments[n-1].stories))transitions.push({vertexIndex:0,stories:Number(shape.segments[0].stories)});
+  return transitions;
+}
 function drawSketch(){
   const svg=$('sketchSvg');const shapes=state.current.shapes||[];svg.innerHTML='';
   const allPts=[];shapes.forEach(s=>allPts.push(...pointsFor(s)));
   if(!allPts.length||shapes.every(s=>!s.segments.length)){
-    svg.innerHTML='<rect width="800" height="600" fill="#ffffff"/><text x="400" y="280" text-anchor="middle" font-size="24" fill="#475569">Add measurements to draw the 2D sketch</text><text x="400" y="320" text-anchor="middle" font-size="16" fill="#64748b">Forward · Right · Back · Left</text>';return;
+    svg.innerHTML='<rect width="800" height="600" fill="#ffffff"/><text x="400" y="270" text-anchor="middle" font-size="24" fill="#475569">Add measurements to draw the 2D sketch</text><text x="400" y="310" text-anchor="middle" font-size="16" fill="#64748b">Say “Begin 1 story” at the corner where the same house gets lower</text><text x="400" y="340" text-anchor="middle" font-size="16" fill="#64748b">Forward · Right · Back · Left</text>';return;
   }
   let minX=Math.min(...allPts.map(p=>p.x)),maxX=Math.max(...allPts.map(p=>p.x)),minY=Math.min(...allPts.map(p=>p.y)),maxY=Math.max(...allPts.map(p=>p.y));
-  if(minX===maxX){minX-=1;maxX+=1}if(minY===maxY){minY-=1;maxY+=1}
+  if(minX===maxX){minX-=1;maxX+=1;}if(minY===maxY){minY-=1;maxY+=1;}
   const pad=70,w=800,h=600,scale=Math.min((w-pad*2)/(maxX-minX),(h-pad*2)/(maxY-minY));
   const tx=x=>pad+(x-minX)*scale,ty=y=>pad+(y-minY)*scale;
   svg.appendChild(svgEl('rect',{x:0,y:0,width:w,height:h,fill:'#ffffff'}));
   for(let gx=Math.floor(minX/10)*10;gx<=maxX;gx+=10)svg.appendChild(svgEl('line',{x1:tx(gx),y1:pad,x2:tx(gx),y2:h-pad,stroke:'#e2e8f0','stroke-width':1}));
   for(let gy=Math.floor(minY/10)*10;gy<=maxY;gy+=10)svg.appendChild(svgEl('line',{x1:pad,y1:ty(gy),x2:w-pad,y2:ty(gy),stroke:'#e2e8f0','stroke-width':1}));
   shapes.forEach((shape,shapeIndex)=>{
-    const pts=pointsFor(shape);if(pts.length<2)return;const selected=shape.id===$('shapeSelect').value;
+    normalizeShape(shape);const pts=pointsFor(shape);if(pts.length<2)return;const selected=shape.id===$('shapeSelect').value;const calc=storyCalculation(shape);
+    if(isClosed(shape)&&calc.regions.length){
+      calc.regions.forEach(region=>{
+        const regionPoints=region.points.map(p=>`${tx(p.x)},${ty(p.y)}`).join(' ');
+        svg.appendChild(svgEl('polygon',{points:regionPoints,fill:storyFill(region.stories,selected),stroke:'none'}));
+        if(calc.regions.length>1){
+          const first=region.points[0],last=region.points[region.points.length-1];
+          svg.appendChild(svgEl('line',{x1:tx(last.x),y1:ty(last.y),x2:tx(first.x),y2:ty(first.y),stroke:'#475569','stroke-width':2,'stroke-dasharray':'8 6'}));
+        }
+        if(region.area>0){
+          const label=svgEl('text',{x:tx(region.centroid.x),y:ty(region.centroid.y),'text-anchor':'middle','font-size':16,'font-weight':800,fill:'#0f172a',stroke:'#fff','stroke-width':5,'paint-order':'stroke'});
+          label.textContent=`${fmt(region.stories)} Story · ${fmt(region.area)} sq ft`;svg.appendChild(label);
+        }
+      });
+    }
     const pointStr=pts.map(p=>`${tx(p.x)},${ty(p.y)}`).join(' ');
-    if(isClosed(shape))svg.appendChild(svgEl('polygon',{points:pointStr,fill:selected?'rgba(34,197,94,.18)':'rgba(56,189,248,.10)',stroke:'none'}));
     svg.appendChild(svgEl('polyline',{points:pointStr,fill:'none',stroke:selected?'#15803d':'#0f172a','stroke-width':selected?5:3,'stroke-linejoin':'round','stroke-linecap':'round'}));
     pts.forEach((p,i)=>svg.appendChild(svgEl('circle',{cx:tx(p.x),cy:ty(p.y),r:i===0?6:4,fill:i===0?'#dc2626':'#0f172a'})));
     shape.segments.forEach((seg,i)=>{
       const a=pts[i],b=pts[i+1],mx=(tx(a.x)+tx(b.x))/2,my=(ty(a.y)+ty(b.y))/2;
       const text=svgEl('text',{x:mx,y:my-7,'text-anchor':'middle','font-size':15,'font-weight':700,fill:'#0f172a',stroke:'#ffffff','stroke-width':4,'paint-order':'stroke'});text.textContent=`${fmt(seg.feet)} ft`;svg.appendChild(text);
+      const story=svgEl('text',{x:mx,y:my+12,'text-anchor':'middle','font-size':12,'font-weight':800,fill:'#334155',stroke:'#ffffff','stroke-width':4,'paint-order':'stroke'});story.textContent=`${fmt(seg.stories)}S`;svg.appendChild(story);
+    });
+    storyTransitions(shape).forEach(t=>{
+      const p=pts[t.vertexIndex];const x=tx(p.x),y=ty(p.y);
+      svg.appendChild(svgEl('polygon',{points:`${x},${y-9} ${x+9},${y} ${x},${y+9} ${x-9},${y}`,fill:'#f59e0b',stroke:'#7c2d12','stroke-width':2}));
+      const label=svgEl('text',{x:x+12,y:y-12,'font-size':13,'font-weight':900,fill:'#7c2d12',stroke:'#fff','stroke-width':4,'paint-order':'stroke'});label.textContent=`Begin ${fmt(t.stories)} Story`;svg.appendChild(label);
     });
     const anchor=pts[0];const label=svgEl('text',{x:tx(anchor.x)+10,y:ty(anchor.y)-14,'font-size':14,'font-weight':800,fill:'#0f172a',stroke:'#fff','stroke-width':4,'paint-order':'stroke'});label.textContent=`${shapeIndex+1}. ${shape.name}`;svg.appendChild(label);
   });
 }
 function svgEl(name,attrs){const el=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));return el;}
 function renderSegmentList(){
-  const box=$('segmentList');const s=selectedShape();box.innerHTML='';if(!s?.segments.length){box.innerHTML='<p class="muted">No measurements entered.</p>';return;}
-  s.segments.forEach((seg,i)=>{const row=document.createElement('div');row.className='segment-row';row.innerHTML=`<span>${i+1}</span><span><strong>${DIRS[seg.dir].label}</strong> ${fmt(seg.feet)} ft</span><button class="danger">Delete</button>`;row.querySelector('button').onclick=()=>{s.segments.splice(i,1);saveInspection();drawSketch();renderSegmentList();renderTotals();};box.appendChild(row);});
+  const box=$('segmentList');const s=selectedShape();box.innerHTML='';
+  if(!s?.segments.length){box.innerHTML='<p class="muted">No measurements entered.</p>';return;}
+  s.segments.forEach((seg,i)=>{
+    const row=document.createElement('div');row.className='segment-row';
+    const transition=i>0&&Number(seg.stories)!==Number(s.segments[i-1].stories)?`<small class="story-change">Begin ${fmt(seg.stories)} Story at this corner</small>`:'';
+    row.innerHTML=`<span>${i+1}</span><span><strong>${DIRS[seg.dir].label}</strong> ${fmt(seg.feet)} ft · ${fmt(seg.stories)} stor${Number(seg.stories)===1?'y':'ies'}${transition}</span><button class="danger">Delete</button>`;
+    row.querySelector('button').onclick=()=>{s.segments.splice(i,1);s.activeStories=s.segments.length?Number(s.segments[s.segments.length-1].stories):Number(s.stories)||1;saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();};box.appendChild(row);
+  });
 }
 function renderTotals(){
-  const s=selectedShape();const footprint=s?footprintArea(s):0;const total=s?calculatedArea(s):0;
-  $('selectedShapeStats').innerHTML=s?`<strong>${escapeHtml(s.name)}</strong><br>${escapeHtml(SHAPE_TYPES[s.type])} · ${fmt(footprint)} sq ft footprint × ${fmt(s.stories)} level${Number(s.stories)===1?'':'s'} = <strong>${fmt(total)} sq ft</strong><br><span class="muted">${isClosed(s)?'Outline is closed.':'Outline is open; area uses an automatic closing line for the estimate.'}</span>`:'';
+  const s=selectedShape();const calc=s?storyCalculation(s):null;
+  if(s&&calc){
+    const breakdown=calc.regions.filter(r=>r.area>0).map(r=>`${fmt(r.area)} sq ft × ${fmt(r.stories)} stor${Number(r.stories)===1?'y':'ies'} = ${fmt(r.area*r.stories)} sq ft`).join('<br>');
+    $('selectedShapeStats').innerHTML=`<strong>${escapeHtml(s.name)}</strong><br>${escapeHtml(SHAPE_TYPES[s.type])} · ${fmt(calc.footprint)} sq ft footprint<br>${breakdown||'<span class="muted">Story areas calculate after the outline is closed.</span>'}${calc.valid?`<br><strong>Total counted area: ${fmt(calc.total)} sq ft</strong>`:`<br><span class="warning-text"><strong>${escapeHtml(calc.reason)}</strong></span>`}<br><span class="muted">Next wall run: ${fmt(s.activeStories)} stor${Number(s.activeStories)===1?'y':'ies'} on this same structure.</span>`;
+  }else $('selectedShapeStats').innerHTML='';
   const t=calculateTotals(state.current.shapes||[]);const labels=[['main_living','Main Living'],['other_living','Other Living'],['attached_garage','Attached Garage'],['covered_porch','Covered Porch'],['deck','Deck'],['detached_garage','Detached Garage'],['outbuilding','Outbuildings']];
   $('totalsBox').innerHTML=labels.map(([k,label])=>`<div class="total-card"><strong>${fmt(t[k])}</strong><small>${label} sq ft</small></div>`).join('');
 }
@@ -267,9 +477,16 @@ function downloadSketch(){
 function startVoice(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('commandMessage').textContent='Voice entry is not available in this browser.';return;}
   const r=new SR();r.lang='en-US';r.interimResults=false;r.maxAlternatives=1;$('commandMessage').textContent='Listening…';
-  r.onresult=e=>{$('commandInput').value=e.results[0][0].transcript;$('commandMessage').textContent='Voice captured. Press Add Command.';};r.onerror=()=>{$('commandMessage').textContent='Voice entry did not complete.';};r.start();
+  r.onresult=e=>{
+    const heard=e.results[0][0].transcript;const result=interpretVoice(heard);
+    $('commandInput').value=result.canonical||cleanSpeechText(heard);
+    if(!result.events.length){$('commandMessage').textContent=`Heard: “${heard}” — no usable measurement or story change found.`;return;}
+    const storyText=result.storyChanges.length?`${result.storyChanges.length} story transition${result.storyChanges.length===1?'':'s'} on the same house`:'';
+    const measurementText=result.commands.length?`${result.commands.length} measurement${result.commands.length===1?'':'s'}`:'';
+    $('commandMessage').textContent=`Heard: “${heard}” — understood ${[storyText,measurementText].filter(Boolean).join(' and ')}. Press Add Command.`;
+  };
+  r.onerror=()=>{$('commandMessage').textContent='Voice entry did not complete.';};r.start();
 }
-
 function departureCheck(){
   const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);
   let html=`<div class="notice"><strong>${items.length-missing.length}/${items.length} photo items complete.</strong></div>`;

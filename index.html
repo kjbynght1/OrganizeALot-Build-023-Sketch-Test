@@ -118,7 +118,7 @@
     </div>
     <h2>2D NIIS Reference Sketch</h2>
     <div class="notice">
-      <strong>2D first.</strong> Enter wall runs as Forward, Right, Back, or Left. This creates a clean reference for entering the same measurements into NIIS.
+      <strong>2D first.</strong> Enter wall runs as Forward, Right, Back, or Left. When the same house changes height, say <strong>“Begin 1 story”</strong> or <strong>“Begin 2 story”</strong> at that corner. It stays one structure and the app divides the square footage by story section.
     </div>
 
     <div class="sketch-layout">
@@ -139,12 +139,13 @@
               <option value="outbuilding">Outbuilding</option>
             </select>
           </label>
-          <label>Stories / Levels
+          <label>Stories for the next wall run
             <input id="shapeStories" type="number" min="0.25" max="10" step="0.25" value="1" />
+            <small class="muted">Changing this after measurements marks a story transition at the current corner—not a new building.</small>
           </label>
           <div class="button-row">
             <button id="newShapeBtn" class="primary">Add New Section</button>
-            <button id="updateShapeBtn" class="secondary">Update Selected</button>
+            <button id="updateShapeBtn" class="secondary">Set Section / Next Story</button>
           </div>
           <label>Current Section
             <select id="shapeSelect"></select>
@@ -167,8 +168,8 @@
 
         <div class="card">
           <h3>Fast Measurement Entry</h3>
-          <p class="muted small-text">Example: <strong>Forward 16, Right 4, Forward 16, Left 4, Forward 16</strong></p>
-          <textarea id="commandInput" rows="3" placeholder="Forward 16, Right 4, Forward 16, Left 4, Forward 16"></textarea>
+          <p class="muted small-text">Example: <strong>17 feet forward, begin 1 story, 12 feet right</strong>. “Write” is corrected to “Right.”</p>
+          <textarea id="commandInput" rows="3" placeholder="17 feet forward, begin 1 story, 12 feet right"></textarea>
           <div class="button-row">
             <button id="addCommandBtn" class="primary">Add Command</button>
             <button id="voiceBtn" class="secondary">🎤 Speak</button>

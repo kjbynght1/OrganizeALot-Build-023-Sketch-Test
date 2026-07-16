@@ -1,7 +1,7 @@
-OrganizeALot Build 023
+OrganizeALot Build 023 — Story Transition Test
 
-Upload the contents of this folder to the same GitHub Pages repository used for testing, or replace the repository files with these Build 023 files.
+This update keeps Build 022 untouched.
 
-Build 022 should be kept separately as the safe working backup.
+Main test: while drawing one house, say “Begin 1 story” at the corner where a two-story section changes to a one-story section. Continue measuring the same house. Say “Begin 2 story” when returning to the taller section, then close the outline.
 
-Main test feature: 2D NIIS reference sketch.
+Upload these files to the separate OrganizeALot-Build-023-Sketch-Test GitHub repository.
