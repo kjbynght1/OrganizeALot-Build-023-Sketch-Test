@@ -1,0 +1,317 @@
+'use strict';
+
+const VERSION = '2.1.0 Build 023';
+const INSPECTION_PREFIX = 'organizealot_insp_';
+const SETTINGS_KEY = 'organizealot_settings_023';
+const DB_NAME = 'OrganizeALotPhotos';
+const DB_VERSION = 1;
+const PHOTO_STORE = 'photos';
+
+const NIIS_SECTIONS = [
+  {name:'House Exterior',items:[
+    ['front','Front of Home','Full front including roofline.'],['rear','Rear of Home','Full rear when accessible.'],['left','Left Side','Full left elevation.'],['right','Right Side','Full right elevation.'],['address','Address Verification','House number, mailbox, curb, or sign.'],['roof_front','Roof - Front','Ground-level or safe raised view.'],['roof_rear','Roof - Rear','Ground-level or safe raised view.'],['foundation','Foundation','Representative foundation view.'],['exterior_material','Exterior Wall Material','Representative siding, brick, stone, or other wall material.']
+  ]},
+  {name:'Interior',items:[
+    ['level_1','Level 1 Overview','At least one representative photo.'],['level_2','Level 2 / Landing','Required when present.'],['basement','Basement','Representative interior and exterior wall type when present.'],['kitchen_1','Kitchen 1','Main kitchen overview.'],['kitchen_2','Kitchen 2','Second kitchen angle.'],['bathrooms','All Bathrooms','Add one or more photos for every bathroom.'],['living_room','Living Room','Representative living area.'],['electrical','Electrical Panel','Clear panel, breakers, manufacturer, and labels.'],['water_heater','Water Heater','Full unit and data plate when accessible.'],['heating','Heating System','Main heating equipment and data plate when accessible.']
+  ]},
+  {name:'Outbuildings & Exposures',items:[
+    ['outbuildings','All Outbuildings','Detached garage, shed, barn, guest house, or other structures.'],['large_outbuilding','Outbuilding Over 400 sq ft','Perimeter views plus two roof views when present.'],['pool_spa','Pools / Spas','Show pool/spa and fencing or safety features.'],['hud_label','HUD Label - Manufactured Home','Required when applicable.'],['hazards','Damage / Hazards','Any visible concern, damage, or unusual exposure.']
+  ]}
+];
+
+const PREFERRED_SECTIONS = [
+  ['Property Verification',[['pr_front','Front View','Front of property/building.'],['pr_address','Address Verification','Clear address verification.']]],
+  ['Building Exterior',[['pr_left','Left Side','Full left elevation.'],['pr_right','Right Side','Full right elevation.'],['pr_rear','Rear View','Rear when possible.'],['pr_material','Exterior Materials','Representative exterior construction.']]],
+  ['Roof',[['pr_roof','Roof Views','Safe representative roof views and close-ups.']]],
+  ['Grounds & Walkways',[['pr_walkways','Driveways / Sidewalks / Walkways','Show condition and hazards.'],['pr_fence','Fencing / Security','Show perimeter fencing and gates.'],['pr_lighting','Exterior Lighting','Representative exterior fixtures.']]],
+  ['Parking Areas',[['pr_parking','Parking Lots / Areas','Wide views and condition.']]],
+  ['Stairs, Railings & Balconies',[['pr_stairs','Steps / Stairs / Balconies','All representative areas.'],['pr_railings','Railings / Baluster Spacing','Show spacing and balcony height.']]],
+  ['Common Areas',[['pr_common_ext','Exterior Common Areas','Courtyards, breezeways, recreation areas.'],['pr_common_int','Interior Common Areas','Hallways, mail rooms, gyms, offices, clubhouses.']]],
+  ['Interior Unit / Business',[['pr_interior','Interior Areas','Required interior access areas.'],['pr_entry','Entry / Exit Points','Representative entry and exit doors.']]],
+  ['Electrical',[['pr_electrical','Circuit Breaker Panels','Clear breakers, manufacturer, serial number, and labels.']]],
+  ['Mechanical & Water Heating',[['pr_mechanical','Heating / Mechanical','Equipment and identifying labels.'],['pr_water_heater','Water Heaters','Full unit and identifying labels.']]],
+  ['Fire & Life Safety',[['pr_smoke','Smoke / CO Detectors','Representative devices.'],['pr_extinguisher','Fire Extinguishers','Location, condition, and tags.'],['pr_alarm','Fire / Burglar Alarm Panel','Panel when present.'],['pr_sprinkler','Sprinkler Riser / Tag','Required when applicable.']]],
+  ['Additional Buildings / Exposures',[['pr_buildings','Additional Buildings','All additional buildings and structures.'],['pr_pool','Swimming Pools','Show fencing, slides, and diving boards.'],['pr_cooking','Commercial Cooking','Cooking line, hood, suppression, fuel, and extinguishers when applicable.']]],
+  ['Hazards / Additional Photos',[['pr_hazards','All Hazards','Photograph every visible hazard.'],['pr_additional','Additional Exposure Photos','Anything needed to explain the risk.']]]
+].map(([name,items])=>({name,items}));
+
+const OBS_SECTIONS = [{name:'OBS Exterior Photos',items:[
+  ['obs_front','Front','Full front including roofline.'],['obs_angle','Front Angle','Front and one side.'],['obs_left','Left Side','Full left elevation.'],['obs_rear','Rear','Full rear when accessible.'],['obs_right','Right Side','Full right elevation.'],['obs_roof','Roof','Best visible safe roof view.'],['obs_address','Address','House number, mailbox, curb, or sign.'],['obs_outbuildings','Outbuildings','All visible detached structures.'],['obs_hazards','Damage / Hazards','Any visible concern.']
+]}];
+
+const SHAPE_TYPES = {
+  main_living:'Main House Living Area', other_living:'Other Living Area', attached_garage:'Attached Garage',
+  covered_porch:'Covered Porch', deck:'Deck / Uncovered Porch', detached_garage:'Detached Garage', outbuilding:'Outbuilding'
+};
+const DIRS = {F:{dx:0,dy:-1,label:'Forward'},R:{dx:1,dy:0,label:'Right'},B:{dx:0,dy:1,label:'Back'},L:{dx:-1,dy:0,label:'Left'}};
+
+const state = {current:null,pendingItem:null,pendingFile:null,pendingDataUrl:null,selectedDir:'F',deferredInstall:null,db:null};
+const $ = id => document.getElementById(id);
+const screens = ['homeScreen','setupScreen','dashboardScreen','photosScreen','cameraScreen','sketchScreen','reviewScreen','settingsScreen'];
+
+function show(id){
+  screens.forEach(s=>$(s).classList.toggle('active',s===id));
+  if(id==='homeScreen') renderSaved();
+  if(id==='dashboardScreen') renderDashboard();
+  if(id==='photosScreen') renderPhotos();
+  if(id==='sketchScreen') renderSketch();
+  window.scrollTo(0,0);
+}
+function escapeHtml(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function uid(prefix='id'){return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;}
+function sanitizeFileName(v){return String(v||'inspection').replace(/[\\/:*?"<>|]+/g,'_').trim()||'inspection';}
+function fmt(n){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:1});}
+function settings(){try{return {...{galleryBackup:false},...JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')};}catch{return {galleryBackup:false};}}
+
+function sectionsFor(type){if(type==='Preferred Reports')return PREFERRED_SECTIONS;if(type==='OBS')return OBS_SECTIONS;return NIIS_SECTIONS;}
+function newInspection(type){
+  const inspection={
+    key:INSPECTION_PREFIX+uid('insp'),type,inspectionId:'',address:'',insuredName:'',inspector:'Chris Roberts',
+    created:new Date().toISOString(),updated:new Date().toISOString(),photoItems:{},shapes:[]
+  };
+  sectionsFor(type).forEach(section=>section.items.forEach(([key,title,help])=>{
+    inspection.photoItems[key]={key,title,help,section:section.name,required:true,photoIds:[],note:'',cannotGet:false};
+  }));
+  state.current=inspection;
+}
+function saveInspection(){
+  if(!state.current)return;
+  if(!state.current.inspectionId.trim()||!state.current.address.trim())return;
+  state.current.updated=new Date().toISOString();
+  localStorage.setItem(state.current.key,JSON.stringify(state.current));
+}
+function allInspections(){
+  return Object.keys(localStorage).filter(k=>k.startsWith(INSPECTION_PREFIX)).map(k=>{
+    try{return JSON.parse(localStorage.getItem(k));}catch{return null;}
+  }).filter(Boolean).sort((a,b)=>new Date(b.updated)-new Date(a.updated));
+}
+function renderSaved(){
+  const all=allInspections();
+  renderSavedGroup($('resumeList'),all.slice(0,6),'No saved inspections yet.');
+  renderSavedGroup($('archiveList'),all.slice(6),'No archived inspections.');
+  $('archiveDetails').classList.toggle('hidden',all.length<=6);
+}
+function renderSavedGroup(box,items,empty){
+  box.innerHTML='';
+  if(!items.length){box.innerHTML=`<p class="muted">${empty}</p>`;return;}
+  items.forEach(item=>{
+    const b=document.createElement('button');b.className='saved-item';
+    b.innerHTML=`<strong>${escapeHtml(item.type)} — ${escapeHtml(item.inspectionId||'No ID')}</strong><br><small>${escapeHtml(item.address||'No address')} · ${new Date(item.updated).toLocaleString()}</small>`;
+    b.onclick=()=>{state.current=item;show('dashboardScreen');};box.appendChild(b);
+  });
+}
+function renderDashboard(){
+  const c=state.current;if(!c)return;
+  $('dashTitle').textContent=`${c.type} Inspection`;
+  $('dashMeta').textContent=`${c.inspectionId} • ${c.address}${c.insuredName?` • ${c.insuredName}`:''}`;
+  const items=Object.values(c.photoItems||{});const complete=items.filter(i=>i.photoIds.length||i.cannotGet).length;
+  $('photoProgressText').textContent=`${complete}/${items.length} required complete`;
+  const totals=calculateTotals(c.shapes||[]);
+  $('sketchSummaryText').textContent=c.type==='OBS'?'Not required':c.shapes?.length?`${fmt(totals.main_living)} main living sq ft`:'No sketch yet';
+  $('sketchBtn').classList.toggle('hidden',c.type==='OBS');$('obsNotice').classList.toggle('hidden',c.type!=='OBS');
+}
+function openWaze(address){
+  const q=encodeURIComponent(address||'');if(!q)return;
+  window.open(`https://www.waze.com/ul?q=${q}&navigate=yes`,'_blank','noopener');
+}
+
+function renderPhotos(){
+  const box=$('photoSections');box.innerHTML='';if(!state.current)return;
+  sectionsFor(state.current.type).forEach(section=>{
+    const sectionEl=document.createElement('div');sectionEl.className='photo-section';
+    const sectionItems=section.items.map(([key])=>state.current.photoItems[key]).filter(Boolean);
+    const completed=sectionItems.filter(i=>i.photoIds.length||i.cannotGet).length;
+    sectionEl.innerHTML=`<h3>${escapeHtml(section.name)} <small>${completed}/${sectionItems.length}</small></h3>`;
+    sectionItems.forEach(item=>sectionEl.appendChild(renderPhotoItem(item)));
+    box.appendChild(sectionEl);
+  });
+}
+function renderPhotoItem(item){
+  const wrap=document.createElement('div');wrap.className='photo-item';
+  const count=item.photoIds.length;const done=count>0||item.cannotGet;
+  wrap.innerHTML=`<div class="photo-item-header"><div class="photo-count ${done?'done':''}">${item.cannotGet?'!':count}</div><div class="info"><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.cannotGet?'Marked unobtainable':item.help)}</small></div><button class="primary take-photo">Take Photo</button></div><div class="photo-thumbnails"></div>`;
+  wrap.querySelector('.take-photo').onclick=()=>openCamera(item.key);
+  const thumbs=wrap.querySelector('.photo-thumbnails');
+  item.photoIds.forEach(photoId=>loadPhotoCard(photoId,item,thumbs));
+  return wrap;
+}
+async function loadPhotoCard(photoId,item,box){
+  const rec=await dbGet(photoId);if(!rec)return;
+  const url=URL.createObjectURL(rec.blob);const card=document.createElement('div');card.className='thumb-card';
+  card.innerHTML=`<img alt="${escapeHtml(item.title)}"><button class="danger">Delete Photo</button>`;card.querySelector('img').src=url;
+  card.querySelector('button').onclick=async()=>{
+    if(!confirm('Delete this photo from OrganizeALot? The separate downloaded backup, if made, will not be deleted.'))return;
+    await dbDelete(photoId);item.photoIds=item.photoIds.filter(id=>id!==photoId);saveInspection();URL.revokeObjectURL(url);renderPhotos();
+  };
+  box.appendChild(card);
+}
+function openCamera(itemKey){
+  state.pendingItem=itemKey;state.pendingFile=null;state.pendingDataUrl=null;
+  const item=state.current.photoItems[itemKey];$('cameraTitle').textContent=item.title;$('cameraHelp').textContent=item.help;$('photoNote').value=item.note||'';
+  $('cameraInput').value='';$('cameraPreview').classList.add('hidden');$('cameraStatus').classList.add('hidden');$('usePhotoBtn').disabled=true;show('cameraScreen');
+  setTimeout(()=>$('cameraInput').click(),150);
+}
+function readAsDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
+async function onCameraChange(e){
+  const file=e.target.files?.[0];if(!file)return;
+  state.pendingFile=file;state.pendingDataUrl=await readAsDataUrl(file);$('cameraPreview').src=state.pendingDataUrl;$('cameraPreview').classList.remove('hidden');$('usePhotoBtn').disabled=false;
+  $('cameraStatus').innerHTML=`<strong>Preview ready.</strong> Check framing, blur, glare, darkness, and roof sun distortion before using the photo.`;$('cameraStatus').classList.remove('hidden');
+}
+async function usePendingPhoto(){
+  if(!state.pendingFile||!state.pendingItem)return;
+  const item=state.current.photoItems[state.pendingItem];const photoId=uid('photo');
+  await dbPut({id:photoId,blob:state.pendingFile,name:state.pendingFile.name||`${item.key}.jpg`,type:state.pendingFile.type||'image/jpeg',created:new Date().toISOString(),inspectionKey:state.current.key,itemKey:item.key});
+  item.photoIds.push(photoId);item.note=$('photoNote').value.trim();item.cannotGet=false;saveInspection();
+  if(settings().galleryBackup)downloadBlob(state.pendingFile,`${sanitizeFileName(state.current.inspectionId)}_${sanitizeFileName(item.title)}_${Date.now()}.jpg`);
+  show('photosScreen');
+}
+function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+
+function ensureSketch(){if(!state.current.shapes)state.current.shapes=[];if(!state.current.shapes.length)addDefaultShape();}
+function addDefaultShape(){
+  const shape={id:uid('shape'),name:'Main House - 1 Story Section',type:'main_living',stories:1,segments:[]};state.current.shapes.push(shape);return shape;
+}
+function selectedShape(){ensureSketch();const id=$('shapeSelect').value;return state.current.shapes.find(s=>s.id===id)||state.current.shapes[0];}
+function renderSketch(){
+  if(!state.current)return;ensureSketch();
+  const select=$('shapeSelect');const previous=select.value;select.innerHTML='';state.current.shapes.forEach(s=>{const o=document.createElement('option');o.value=s.id;o.textContent=s.name;select.appendChild(o);});
+  select.value=state.current.shapes.some(s=>s.id===previous)?previous:state.current.shapes[0].id;
+  loadShapeForm();drawSketch();renderSegmentList();renderTotals();
+}
+function loadShapeForm(){const s=selectedShape();if(!s)return;$('shapeName').value=s.name;$('shapeType').value=s.type;$('shapeStories').value=s.stories;}
+function createShape(){
+  const name=$('shapeName').value.trim()||`Section ${state.current.shapes.length+1}`;const type=$('shapeType').value;const stories=Math.max(.25,Number($('shapeStories').value)||1);
+  const shape={id:uid('shape'),name,type,stories,segments:[]};state.current.shapes.push(shape);saveInspection();renderSketch();$('shapeSelect').value=shape.id;loadShapeForm();drawSketch();renderSegmentList();
+}
+function updateShape(){const s=selectedShape();if(!s)return;s.name=$('shapeName').value.trim()||s.name;s.type=$('shapeType').value;s.stories=Math.max(.25,Number($('shapeStories').value)||1);saveInspection();renderSketch();$('shapeSelect').value=s.id;loadShapeForm();}
+function addSegment(dir,feet){
+  const s=selectedShape();const f=Number(feet);if(!s||!DIRS[dir]||!Number.isFinite(f)||f<=0)return false;s.segments.push({dir,feet:Math.round(f*100)/100});saveInspection();drawSketch();renderSegmentList();renderTotals();return true;
+}
+function parseCommand(text){
+  const normalized=String(text||'').toLowerCase().replace(/feet|foot|ft\.?/g,' ').replace(/to the /g,' ').replace(/,/g,' ');
+  const aliases={forward:'F',front:'F',up:'F',straight:'F',right:'R',back:'B',rear:'B',down:'B',left:'L'};
+  const tokens=normalized.match(/forward|front|up|straight|right|back|rear|down|left|-?\d+(?:\.\d+)?/g)||[];
+  const commands=[];let pendingDir=null;
+  for(const token of tokens){
+    if(aliases[token]){pendingDir=aliases[token];continue;}
+    const n=Number(token);if(Number.isFinite(n)&&n>0){commands.push({dir:pendingDir||'F',feet:n});pendingDir=null;}
+  }
+  return commands;
+}
+function addCommand(){
+  const commands=parseCommand($('commandInput').value);if(!commands.length){$('commandMessage').textContent='No usable measurements found.';return;}
+  commands.forEach(c=>addSegment(c.dir,c.feet));$('commandMessage').textContent=`Added ${commands.length} measurement${commands.length===1?'':'s'}.`;$('commandInput').value='';
+}
+function pointsFor(shape){
+  const pts=[{x:0,y:0}];let x=0,y=0;shape.segments.forEach(seg=>{const d=DIRS[seg.dir];x+=d.dx*seg.feet;y+=d.dy*seg.feet;pts.push({x,y});});return pts;
+}
+function isClosed(shape){const p=pointsFor(shape);const a=p[0],b=p[p.length-1];return p.length>2&&Math.abs(a.x-b.x)<.01&&Math.abs(a.y-b.y)<.01;}
+function footprintArea(shape){
+  const p=pointsFor(shape);if(p.length<4)return 0;let area=0;for(let i=0;i<p.length;i++){const a=p[i],b=p[(i+1)%p.length];area+=a.x*b.y-b.x*a.y;}return Math.abs(area)/2;
+}
+function calculatedArea(shape){return footprintArea(shape)*(Number(shape.stories)||1);}
+function closeShape(){
+  const s=selectedShape();const pts=pointsFor(s);const end=pts[pts.length-1];if(Math.abs(end.x)<.01&&Math.abs(end.y)<.01)return;
+  if(Math.abs(end.x)>.01)addSegment(end.x>0?'L':'R',Math.abs(end.x));
+  if(Math.abs(end.y)>.01)addSegment(end.y>0?'F':'B',Math.abs(end.y));
+}
+function undoSegment(){const s=selectedShape();if(!s?.segments.length)return;s.segments.pop();saveInspection();drawSketch();renderSegmentList();renderTotals();}
+function clearShape(){const s=selectedShape();if(!s||!confirm(`Clear all measurements from ${s.name}?`))return;s.segments=[];saveInspection();drawSketch();renderSegmentList();renderTotals();}
+function deleteShape(){
+  const s=selectedShape();if(!s||!confirm(`Delete ${s.name}?`))return;state.current.shapes=state.current.shapes.filter(x=>x.id!==s.id);if(!state.current.shapes.length)addDefaultShape();saveInspection();renderSketch();
+}
+function calculateTotals(shapes){
+  const totals={main_living:0,other_living:0,attached_garage:0,covered_porch:0,deck:0,detached_garage:0,outbuilding:0};
+  shapes.forEach(s=>{totals[s.type]=(totals[s.type]||0)+calculatedArea(s);});return totals;
+}
+function drawSketch(){
+  const svg=$('sketchSvg');const shapes=state.current.shapes||[];svg.innerHTML='';
+  const allPts=[];shapes.forEach(s=>allPts.push(...pointsFor(s)));
+  if(!allPts.length||shapes.every(s=>!s.segments.length)){
+    svg.innerHTML='<rect width="800" height="600" fill="#ffffff"/><text x="400" y="280" text-anchor="middle" font-size="24" fill="#475569">Add measurements to draw the 2D sketch</text><text x="400" y="320" text-anchor="middle" font-size="16" fill="#64748b">Forward · Right · Back · Left</text>';return;
+  }
+  let minX=Math.min(...allPts.map(p=>p.x)),maxX=Math.max(...allPts.map(p=>p.x)),minY=Math.min(...allPts.map(p=>p.y)),maxY=Math.max(...allPts.map(p=>p.y));
+  if(minX===maxX){minX-=1;maxX+=1}if(minY===maxY){minY-=1;maxY+=1}
+  const pad=70,w=800,h=600,scale=Math.min((w-pad*2)/(maxX-minX),(h-pad*2)/(maxY-minY));
+  const tx=x=>pad+(x-minX)*scale,ty=y=>pad+(y-minY)*scale;
+  svg.appendChild(svgEl('rect',{x:0,y:0,width:w,height:h,fill:'#ffffff'}));
+  for(let gx=Math.floor(minX/10)*10;gx<=maxX;gx+=10)svg.appendChild(svgEl('line',{x1:tx(gx),y1:pad,x2:tx(gx),y2:h-pad,stroke:'#e2e8f0','stroke-width':1}));
+  for(let gy=Math.floor(minY/10)*10;gy<=maxY;gy+=10)svg.appendChild(svgEl('line',{x1:pad,y1:ty(gy),x2:w-pad,y2:ty(gy),stroke:'#e2e8f0','stroke-width':1}));
+  shapes.forEach((shape,shapeIndex)=>{
+    const pts=pointsFor(shape);if(pts.length<2)return;const selected=shape.id===$('shapeSelect').value;
+    const pointStr=pts.map(p=>`${tx(p.x)},${ty(p.y)}`).join(' ');
+    if(isClosed(shape))svg.appendChild(svgEl('polygon',{points:pointStr,fill:selected?'rgba(34,197,94,.18)':'rgba(56,189,248,.10)',stroke:'none'}));
+    svg.appendChild(svgEl('polyline',{points:pointStr,fill:'none',stroke:selected?'#15803d':'#0f172a','stroke-width':selected?5:3,'stroke-linejoin':'round','stroke-linecap':'round'}));
+    pts.forEach((p,i)=>svg.appendChild(svgEl('circle',{cx:tx(p.x),cy:ty(p.y),r:i===0?6:4,fill:i===0?'#dc2626':'#0f172a'})));
+    shape.segments.forEach((seg,i)=>{
+      const a=pts[i],b=pts[i+1],mx=(tx(a.x)+tx(b.x))/2,my=(ty(a.y)+ty(b.y))/2;
+      const text=svgEl('text',{x:mx,y:my-7,'text-anchor':'middle','font-size':15,'font-weight':700,fill:'#0f172a',stroke:'#ffffff','stroke-width':4,'paint-order':'stroke'});text.textContent=`${fmt(seg.feet)} ft`;svg.appendChild(text);
+    });
+    const anchor=pts[0];const label=svgEl('text',{x:tx(anchor.x)+10,y:ty(anchor.y)-14,'font-size':14,'font-weight':800,fill:'#0f172a',stroke:'#fff','stroke-width':4,'paint-order':'stroke'});label.textContent=`${shapeIndex+1}. ${shape.name}`;svg.appendChild(label);
+  });
+}
+function svgEl(name,attrs){const el=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([k,v])=>el.setAttribute(k,String(v)));return el;}
+function renderSegmentList(){
+  const box=$('segmentList');const s=selectedShape();box.innerHTML='';if(!s?.segments.length){box.innerHTML='<p class="muted">No measurements entered.</p>';return;}
+  s.segments.forEach((seg,i)=>{const row=document.createElement('div');row.className='segment-row';row.innerHTML=`<span>${i+1}</span><span><strong>${DIRS[seg.dir].label}</strong> ${fmt(seg.feet)} ft</span><button class="danger">Delete</button>`;row.querySelector('button').onclick=()=>{s.segments.splice(i,1);saveInspection();drawSketch();renderSegmentList();renderTotals();};box.appendChild(row);});
+}
+function renderTotals(){
+  const s=selectedShape();const footprint=s?footprintArea(s):0;const total=s?calculatedArea(s):0;
+  $('selectedShapeStats').innerHTML=s?`<strong>${escapeHtml(s.name)}</strong><br>${escapeHtml(SHAPE_TYPES[s.type])} · ${fmt(footprint)} sq ft footprint × ${fmt(s.stories)} level${Number(s.stories)===1?'':'s'} = <strong>${fmt(total)} sq ft</strong><br><span class="muted">${isClosed(s)?'Outline is closed.':'Outline is open; area uses an automatic closing line for the estimate.'}</span>`:'';
+  const t=calculateTotals(state.current.shapes||[]);const labels=[['main_living','Main Living'],['other_living','Other Living'],['attached_garage','Attached Garage'],['covered_porch','Covered Porch'],['deck','Deck'],['detached_garage','Detached Garage'],['outbuilding','Outbuildings']];
+  $('totalsBox').innerHTML=labels.map(([k,label])=>`<div class="total-card"><strong>${fmt(t[k])}</strong><small>${label} sq ft</small></div>`).join('');
+}
+function downloadSketch(){
+  const clone=$('sketchSvg').cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');const xml=new XMLSerializer().serializeToString(clone);const blob=new Blob([xml],{type:'image/svg+xml'});downloadBlob(blob,`${sanitizeFileName(state.current.inspectionId)}_2D_Sketch.svg`);
+}
+function startVoice(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('commandMessage').textContent='Voice entry is not available in this browser.';return;}
+  const r=new SR();r.lang='en-US';r.interimResults=false;r.maxAlternatives=1;$('commandMessage').textContent='Listening…';
+  r.onresult=e=>{$('commandInput').value=e.results[0][0].transcript;$('commandMessage').textContent='Voice captured. Press Add Command.';};r.onerror=()=>{$('commandMessage').textContent='Voice entry did not complete.';};r.start();
+}
+
+function departureCheck(){
+  const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);
+  let html=`<div class="notice"><strong>${items.length-missing.length}/${items.length} photo items complete.</strong></div>`;
+  if(missing.length)html+=`<div class="card"><h3>Missing Required Photos</h3><ul>${missing.map(i=>`<li>${escapeHtml(i.section)} — ${escapeHtml(i.title)}</li>`).join('')}</ul></div>`;
+  if(overrides.length)html+=`<div class="card"><h3>Marked Unobtainable</h3><ul>${overrides.map(i=>`<li>${escapeHtml(i.title)}${i.note?` — ${escapeHtml(i.note)}`:''}</li>`).join('')}</ul></div>`;
+  if(c.type!=='OBS')html+=`<div class="card"><h3>Sketch Check</h3><p>${c.shapes?.length?`${fmt(totals.main_living)} sq ft main living area recorded across ${c.shapes.length} section(s).`:'No 2D sketch sections have been entered.'}</p></div>`;
+  if(!missing.length)html+=`<div class="notice"><strong>Photo checklist is ready.</strong> Review the sketch and notes before leaving.</div>`;
+  $('reviewResults').innerHTML=html;show('reviewScreen');
+}
+async function exportInspection(){
+  saveInspection();const c=structuredClone(state.current);const photoManifest=[];
+  for(const item of Object.values(c.photoItems||{}))for(const id of item.photoIds){const rec=await dbGet(id);if(rec)photoManifest.push({id,itemKey:item.key,itemTitle:item.title,name:rec.name,type:rec.type,created:rec.created});}
+  const payload={version:VERSION,exported:new Date().toISOString(),inspection:c,photoManifest,note:'Photo image files remain stored in this browser. This JSON is the inspection data backup.'};
+  downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),`OrganizeALot_${sanitizeFileName(c.inspectionId)}_Build023.json`);
+}
+
+function openDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,DB_VERSION);req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(PHOTO_STORE))db.createObjectStore(PHOTO_STORE,{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+function dbTx(mode){return state.db.transaction(PHOTO_STORE,mode).objectStore(PHOTO_STORE);}
+function dbPut(record){return new Promise((resolve,reject)=>{const r=dbTx('readwrite').put(record);r.onsuccess=()=>resolve(record);r.onerror=()=>reject(r.error);});}
+function dbGet(id){return new Promise((resolve,reject)=>{const r=dbTx('readonly').get(id);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});}
+function dbDelete(id){return new Promise((resolve,reject)=>{const r=dbTx('readwrite').delete(id);r.onsuccess=()=>resolve();r.onerror=()=>reject(r.error);});}
+
+function wireEvents(){
+  document.querySelectorAll('.tile').forEach(b=>b.onclick=()=>{newInspection(b.dataset.type);$('setupTitle').textContent=`New ${b.dataset.type} Inspection`;$('inspectionId').value='';$('address').value='';$('insuredName').value='';$('inspector').value='Chris Roberts';show('setupScreen');});
+  document.querySelectorAll('[data-screen]').forEach(b=>b.onclick=()=>show(b.dataset.screen));
+  $('startBtn').onclick=()=>{const id=$('inspectionId').value.trim(),address=$('address').value.trim();if(!id||!address){alert('Enter both the Inspection ID and property address.');return;}Object.assign(state.current,{inspectionId:id,address,insuredName:$('insuredName').value.trim(),inspector:$('inspector').value.trim()||'Chris Roberts'});saveInspection();show('dashboardScreen');};
+  $('setupWazeBtn').onclick=()=>openWaze($('address').value.trim());$('wazeBtn').onclick=()=>openWaze(state.current?.address);
+  $('saveBtn').onclick=()=>{saveInspection();renderDashboard();};$('photosSaveBtn').onclick=()=>{saveInspection();renderPhotos();};$('photosBtn').onclick=()=>show('photosScreen');$('sketchBtn').onclick=()=>show('sketchScreen');$('reviewBtn').onclick=departureCheck;$('exportBtn').onclick=exportInspection;
+  $('deleteInspectionBtn').onclick=()=>{if(!state.current||!confirm(`Delete inspection ${state.current.inspectionId}?`))return;localStorage.removeItem(state.current.key);state.current=null;show('homeScreen');};
+  $('cameraInput').addEventListener('change',onCameraChange);$('usePhotoBtn').onclick=usePendingPhoto;$('retakePhotoBtn').onclick=()=>{$('cameraInput').value='';$('cameraInput').click();};
+  $('cannotGetPhotoBtn').onclick=()=>{const item=state.current.photoItems[state.pendingItem];item.cannotGet=true;item.note=$('photoNote').value.trim()||'Photo could not be obtained.';saveInspection();show('photosScreen');};
+  document.querySelectorAll('.direction').forEach(b=>b.onclick=()=>{state.selectedDir=b.dataset.dir;document.querySelectorAll('.direction').forEach(x=>x.classList.toggle('active',x===b));});
+  $('addSegmentBtn').onclick=()=>{if(addSegment(state.selectedDir,$('segmentFeet').value))$('segmentFeet').value='';else alert('Enter a valid measurement in feet.');};
+  $('newShapeBtn').onclick=createShape;$('updateShapeBtn').onclick=updateShape;$('shapeSelect').onchange=()=>{loadShapeForm();drawSketch();renderSegmentList();renderTotals();};
+  $('addCommandBtn').onclick=addCommand;$('voiceBtn').onclick=startVoice;$('undoSegmentBtn').onclick=undoSegment;$('closeShapeBtn').onclick=closeShape;$('clearShapeBtn').onclick=clearShape;$('deleteShapeBtn').onclick=deleteShape;
+  $('saveSketchBtn').onclick=()=>{saveInspection();renderSketch();};$('downloadSvgBtn').onclick=downloadSketch;$('printSketchBtn').onclick=()=>window.print();
+  $('settingsBtn').onclick=()=>{const s=settings();$('galleryBackupSetting').checked=s.galleryBackup;show('settingsScreen');};$('saveSettingsBtn').onclick=()=>{localStorage.setItem(SETTINGS_KEY,JSON.stringify({galleryBackup:$('galleryBackupSetting').checked}));show('homeScreen');};
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstall=e;$('installBtn').classList.remove('hidden');});$('installBtn').onclick=async()=>{if(state.deferredInstall){state.deferredInstall.prompt();state.deferredInstall=null;$('installBtn').classList.add('hidden');}};
+}
+
+async function init(){
+  try{state.db=await openDb();}catch(err){console.error(err);alert('Photo storage could not be opened. Inspection text and sketch features will still work.');}
+  wireEvents();renderSaved();if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(console.error);
+}
+init();
