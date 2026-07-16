@@ -39,3 +39,10 @@ Build 023 now treats a change from two stories to one story as a change **within
 4. Enter or say `Begin 2 story` where the perimeter returns to the taller section.
 5. Close the outline.
 6. Confirm the sketch displays separate `1 Story` and `2 Story` areas and the total square footage is correct.
+
+
+## Clear/Delete regression fix
+- Restored reliable Clear Section and Delete Section button actions after the story-transition update.
+- Clear Section now removes all measurements and story transitions while keeping the section ready to redraw.
+- Delete Section now visibly removes the selected section and selects the remaining section; deleting the last section creates a fresh blank Main House section.
+- Added explicit non-submit button behavior and refreshed the service-worker cache.

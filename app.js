@@ -381,13 +381,33 @@ function undoSegment(){
   s.activeStories=s.segments.length?Number(s.segments[s.segments.length-1].stories):Number(s.stories)||1;
   saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
 }
-function clearShape(){
-  const s=selectedShape();if(!s||!confirm(`Clear all measurements from ${s.name}?`))return;
-  s.segments=[];s.activeStories=s.stories;saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
+function clearShape(event){
+  event?.preventDefault?.();event?.stopPropagation?.();
+  const s=selectedShape();
+  if(!s)return;
+  if(!confirm(`Clear all measurements and story transitions from ${s.name}?`))return;
+  const clearedName=s.name;
+  s.segments.length=0;
+  s.activeStories=Math.max(.25,Number(s.stories)||1);
+  saveInspection();
+  renderSketch();
+  $('shapeSelect').value=s.id;
+  loadShapeForm();drawSketch();renderSegmentList();renderTotals();
+  updateCurrentStoryMessage(`${clearedName} was cleared. The section remains available for new measurements.`);
 }
-function deleteShape(){
-  const s=selectedShape();if(!s||!confirm(`Delete ${s.name}?`))return;
-  state.current.shapes=state.current.shapes.filter(x=>x.id!==s.id);if(!state.current.shapes.length)addDefaultShape();saveInspection();renderSketch();
+function deleteShape(event){
+  event?.preventDefault?.();event?.stopPropagation?.();
+  const s=selectedShape();
+  if(!s)return;
+  if(!confirm(`Delete the entire ${s.name} section?`))return;
+  const deletedName=s.name;
+  state.current.shapes=state.current.shapes.filter(x=>x.id!==s.id);
+  let replacement=null;
+  if(!state.current.shapes.length)replacement=addDefaultShape();
+  else replacement=state.current.shapes[0];
+  saveInspection();renderSketch();
+  if(replacement){$('shapeSelect').value=replacement.id;loadShapeForm();drawSketch();renderSegmentList();renderTotals();}
+  updateCurrentStoryMessage(`${deletedName} was deleted.${state.current.shapes.length===1&&replacement?.name==='Main House'?' A new blank Main House section is ready.':''}`);
 }
 function calculateTotals(shapes){
   const totals={main_living:0,other_living:0,attached_garage:0,covered_porch:0,deck:0,detached_garage:0,outbuilding:0};
@@ -521,7 +541,7 @@ function wireEvents(){
   document.querySelectorAll('.direction').forEach(b=>b.onclick=()=>{state.selectedDir=b.dataset.dir;document.querySelectorAll('.direction').forEach(x=>x.classList.toggle('active',x===b));});
   $('addSegmentBtn').onclick=()=>{if(addSegment(state.selectedDir,$('segmentFeet').value))$('segmentFeet').value='';else alert('Enter a valid measurement in feet.');};
   $('newShapeBtn').onclick=createShape;$('updateShapeBtn').onclick=updateShape;$('shapeSelect').onchange=()=>{loadShapeForm();drawSketch();renderSegmentList();renderTotals();};
-  $('addCommandBtn').onclick=addCommand;$('voiceBtn').onclick=startVoice;$('undoSegmentBtn').onclick=undoSegment;$('closeShapeBtn').onclick=closeShape;$('clearShapeBtn').onclick=clearShape;$('deleteShapeBtn').onclick=deleteShape;
+  $('addCommandBtn').onclick=addCommand;$('voiceBtn').onclick=startVoice;$('undoSegmentBtn').onclick=undoSegment;$('closeShapeBtn').onclick=closeShape;$('clearShapeBtn').addEventListener('click',clearShape);$('deleteShapeBtn').addEventListener('click',deleteShape);
   $('saveSketchBtn').onclick=()=>{saveInspection();renderSketch();};$('downloadSvgBtn').onclick=downloadSketch;$('printSketchBtn').onclick=()=>window.print();
   $('settingsBtn').onclick=()=>{const s=settings();$('galleryBackupSetting').checked=s.galleryBackup;show('settingsScreen');};$('saveSettingsBtn').onclick=()=>{localStorage.setItem(SETTINGS_KEY,JSON.stringify({galleryBackup:$('galleryBackupSetting').checked}));show('homeScreen');};
   window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();state.deferredInstall=e;$('installBtn').classList.remove('hidden');});$('installBtn').onclick=async()=>{if(state.deferredInstall){state.deferredInstall.prompt();state.deferredInstall=null;$('installBtn').classList.add('hidden');}};

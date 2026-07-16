@@ -114,7 +114,7 @@
   <section id="sketchScreen" class="screen">
     <div class="dash-top">
       <button class="back" data-screen="dashboardScreen">← Dashboard</button>
-      <button id="saveSketchBtn" class="secondary">Save Sketch</button>
+      <button type="button" id="saveSketchBtn" class="secondary">Save Sketch</button>
     </div>
     <h2>2D NIIS Reference Sketch</h2>
     <div class="notice">
@@ -144,8 +144,8 @@
             <small class="muted">Changing this after measurements marks a story transition at the current corner—not a new building.</small>
           </label>
           <div class="button-row">
-            <button id="newShapeBtn" class="primary">Add New Section</button>
-            <button id="updateShapeBtn" class="secondary">Set Section / Next Story</button>
+            <button type="button" id="newShapeBtn" class="primary">Add New Section</button>
+            <button type="button" id="updateShapeBtn" class="secondary">Set Section / Next Story</button>
           </div>
           <label>Current Section
             <select id="shapeSelect"></select>
@@ -163,7 +163,7 @@
           <label>Feet
             <input id="segmentFeet" type="number" min="0.1" max="1000" step="0.1" inputmode="decimal" placeholder="16" />
           </label>
-          <button id="addSegmentBtn" class="primary wide">Add Measurement</button>
+          <button type="button" id="addSegmentBtn" class="primary wide">Add Measurement</button>
         </div>
 
         <div class="card">
@@ -171,8 +171,8 @@
           <p class="muted small-text">Example: <strong>17 feet forward, begin 1 story, 12 feet right</strong>. “Write” is corrected to “Right.”</p>
           <textarea id="commandInput" rows="3" placeholder="17 feet forward, begin 1 story, 12 feet right"></textarea>
           <div class="button-row">
-            <button id="addCommandBtn" class="primary">Add Command</button>
-            <button id="voiceBtn" class="secondary">🎤 Speak</button>
+            <button type="button" id="addCommandBtn" class="primary">Add Command</button>
+            <button type="button" id="voiceBtn" class="secondary">🎤 Speak</button>
           </div>
           <div id="commandMessage" class="muted small-text"></div>
         </div>
@@ -180,18 +180,18 @@
         <div class="card">
           <h3>Section Tools</h3>
           <div class="button-row wrap">
-            <button id="undoSegmentBtn" class="secondary">Undo Last</button>
-            <button id="closeShapeBtn" class="secondary">Close to Start</button>
-            <button id="clearShapeBtn" class="warning">Clear Section</button>
-            <button id="deleteShapeBtn" class="danger">Delete Section</button>
+            <button type="button" id="undoSegmentBtn" class="secondary">Undo Last</button>
+            <button type="button" id="closeShapeBtn" class="secondary">Close to Start</button>
+            <button type="button" id="clearShapeBtn" class="warning">Clear Section</button>
+            <button type="button" id="deleteShapeBtn" class="danger">Delete Section</button>
           </div>
         </div>
       </div>
 
       <div class="sketch-display">
         <div class="sketch-toolbar">
-          <button id="downloadSvgBtn" class="secondary">Download Sketch</button>
-          <button id="printSketchBtn" class="secondary">Print</button>
+          <button type="button" id="downloadSvgBtn" class="secondary">Download Sketch</button>
+          <button type="button" id="printSketchBtn" class="secondary">Print</button>
         </div>
         <div id="sketchCanvasWrap">
           <svg id="sketchSvg" viewBox="0 0 800 600" role="img" aria-label="Property measurement sketch"></svg>
