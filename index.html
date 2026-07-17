@@ -170,11 +170,7 @@
           <h3>Fast Measurement Entry</h3>
           <p class="muted small-text">Example: <strong>17 feet forward, begin 1 story, 12 feet right</strong>. Voice commands are applied immediately. “Write” is corrected to “Right.”</p>
           <textarea id="commandInput" rows="3" placeholder="17 feet forward, begin 1 story, 12 feet right"></textarea>
-          <div class="button-row">
-            <button type="button" id="addCommandBtn" class="primary">Add Command</button>
-            <button type="button" id="voiceBtn" class="secondary">🎤 Speak & Apply</button>
-          </div>
-          <div id="commandMessage" class="muted small-text"></div>
+          <button type="button" id="addCommandBtn" class="primary wide">Add Command</button>
         </div>
 
         <div class="card">
@@ -185,6 +181,8 @@
             <button type="button" id="clearShapeBtn" class="warning">Clear Section</button>
             <button type="button" id="deleteShapeBtn" class="danger">Delete Section</button>
           </div>
+          <button type="button" id="voiceBtn" class="primary wide voice-draw-btn">🎤 Speak & Apply</button>
+          <div id="commandMessage" class="muted small-text"></div>
         </div>
       </div>
 
@@ -223,7 +221,7 @@
 
 <footer>
   <button id="settingsBtn" class="footer-button">Settings</button>
-  <span>OrganizeALot v2.1.0 Build 023 Voice Fix</span>
+  <span>OrganizeALot v2.1.0 Build 023 Voice Button Move</span>
 </footer>
 
 <script src="app.js"></script>

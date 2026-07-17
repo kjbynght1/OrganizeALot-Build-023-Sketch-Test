@@ -68,3 +68,8 @@ Build 023 now treats a change from two stories to one story as a change **within
 - Existing detached sections created before this update are migrated to the same minimum spacing when they did not already have a stored position.
 - Closing a detached outline now returns to that structure's own starting point rather than the Main House origin.
 - Updated the service-worker cache so the new spacing loads immediately.
+
+
+## Speak Button Placement
+- Moved **Speak & Apply** below **Section Tools** so the sketch canvas is immediately underneath it on the test screen.
+- Fast Measurement Entry still keeps the typed **Add Command** option.

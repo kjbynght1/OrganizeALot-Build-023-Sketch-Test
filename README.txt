@@ -12,3 +12,5 @@ Clear/Delete fix: Section Tools are restored while preserving 2-story to 1-story
 Voice auto-apply fix: Tap “Speak & Apply,” say the complete command, and the sketch changes immediately. Example: “Begin 1 story, 17 feet forward” changes the current corner of the same house to one story and draws the next 17-foot wall as one story.
 
 Detached structures now begin at least 15 ft away from the existing sketch.
+
+Speak & Apply is now directly below Section Tools, immediately above the sketch display.

@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '2.1.0 Build 023 Detached Spacing Fix';
+const VERSION = '2.1.0 Build 023 Speak Button Move';
 const INSPECTION_PREFIX = 'organizealot_insp_';
 const SETTINGS_KEY = 'organizealot_settings_023';
 const DB_NAME = 'OrganizeALotPhotos';
