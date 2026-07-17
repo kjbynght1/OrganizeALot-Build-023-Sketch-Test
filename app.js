@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '2.1.0 Build 023';
+const VERSION = '2.1.0 Build 023 Voice Fix';
 const INSPECTION_PREFIX = 'organizealot_insp_';
 const SETTINGS_KEY = 'organizealot_settings_023';
 const DB_NAME = 'OrganizeALotPhotos';
@@ -257,7 +257,14 @@ function cleanSpeechText(text){
     .replace(/\b(backward|backwards)\b/g,'back')
     .replace(/\b(right-hand side|right hand side)\b/g,'right')
     .replace(/\b(left-hand side|left hand side)\b/g,'left')
-    .replace(/[;:]/g,',');
+    .replace(/\bstoreys?\b/g,match=>match.endsWith('s')?'stories':'story')
+    .replace(/\b(?:beginning|began)\b/g,'begin')
+    .replace(/\b(?:lower|drop|go)\s+(?:down\s+)?to\b/g,'change to')
+    .replace(/\breturn\s+to\b/g,'change to')
+    .replace(/\ba\s+(?=\d+(?:\.\d+)?\s*stor)/g,'')
+    .replace(/[;:]/g,',')
+    .replace(/\s+/g,' ')
+    .trim();
 }
 function parseCommand(text){
   const normalized=cleanSpeechText(text).replace(/\b(?:feet|foot|ft)\.?\b/g,' ').replace(/to the /g,' ').replace(/\b(go|turn|move|put|side|the|a|an|then|and)\b/g,' ').replace(/,/g,' ');
@@ -280,7 +287,9 @@ function parseCommand(text){
 }
 function parseVoiceEvents(text){
   const cleaned=cleanSpeechText(text);const events=[];
-  const storyPattern=/\b(?:(?:begin|start|switch|change|now)(?:\s+to)?\s*)?(\d+(?:\.\d+)?)\s*(?:story|stories|level|levels)\b/gi;
+  // A story phrase changes the height for the NEXT wall run on the SAME structure.
+  // The text before and after each phrase is parsed separately so spoken order is preserved.
+  const storyPattern=/\b(?:(?:begin|start|switch|change|now|set)(?:\s+back)?(?:\s+to)?\s*)?(\d+(?:\.\d+)?)\s*(?:story|stories|level|levels)\b/gi;
   let lastIndex=0;let match;
   while((match=storyPattern.exec(cleaned))){
     parseCommand(cleaned.slice(lastIndex,match.index)).forEach(c=>events.push({type:'segment',...c}));
@@ -297,20 +306,34 @@ function interpretVoice(text){
   const events=parseVoiceEvents(text);const commands=events.filter(e=>e.type==='segment');const storyChanges=events.filter(e=>e.type==='story');
   return {events,commands,storyChanges,canonical:canonicalEvents(events)};
 }
-function addCommand(){
-  const result=interpretVoice($('commandInput').value);
-  if(!result.events.length){$('commandMessage').textContent='No usable measurement or story change found.';return;}
-  let measurements=0,changes=0;
+function applyInterpretedEvents(result,{heard='',source='typed'}={}){
+  if(!result.events.length){
+    $('commandMessage').textContent=heard?`Heard: “${heard}” — no usable measurement or story change found.`:'No usable measurement or story change found.';
+    return false;
+  }
+  let measurements=0,storyInstructions=0,transitions=0;
   result.events.forEach(event=>{
-    if(event.type==='story'){if(setActiveStories(event.stories,{announce:false}))changes++;}
-    else if(addSegment(event.dir,event.feet,{refresh:false}))measurements++;
+    if(event.type==='story'){
+      storyInstructions++;
+      if(setActiveStories(event.stories,{announce:false}))transitions++;
+    }else if(addSegment(event.dir,event.feet,{refresh:false}))measurements++;
   });
   saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
   const parts=[];
-  if(changes)parts.push(`${changes} story transition${changes===1?'':'s'}`);
+  if(storyInstructions){
+    parts.push(`${storyInstructions} story setting${storyInstructions===1?'':'s'}`);
+  }
   if(measurements)parts.push(`${measurements} measurement${measurements===1?'':'s'}`);
-  $('commandMessage').textContent=`Added ${parts.join(' and ')} to the same structure. Next wall run is ${fmt(selectedShape().activeStories)} stor${Number(selectedShape().activeStories)===1?'y':'ies'}.`;
-  $('commandInput').value='';
+  const prefix=source==='voice'?'Voice applied':'Added';
+  const heardText=heard?`Heard: “${heard}” — `:'';
+  const transitionText=storyInstructions&&!transitions?' The requested story level was already active.':'';
+  const canonical=result.canonical?` (${result.canonical})`:'';
+  $('commandMessage').textContent=`${heardText}${prefix} ${parts.join(' and ')} to the same structure${canonical}. Next wall run is ${fmt(selectedShape().activeStories)} stor${Number(selectedShape().activeStories)===1?'y':'ies'}.${transitionText}`;
+  return true;
+}
+function addCommand(){
+  const result=interpretVoice($('commandInput').value);
+  if(applyInterpretedEvents(result))$('commandInput').value='';
 }
 function pointsFor(shape){
   normalizeShape(shape);const pts=[{x:0,y:0}];let x=0,y=0;
@@ -496,16 +519,18 @@ function downloadSketch(){
 }
 function startVoice(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('commandMessage').textContent='Voice entry is not available in this browser.';return;}
-  const r=new SR();r.lang='en-US';r.interimResults=false;r.maxAlternatives=1;$('commandMessage').textContent='Listening…';
+  const r=new SR();r.lang='en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
+  $('voiceBtn').disabled=true;$('commandMessage').textContent='Listening… Speak the complete wall and story command.';
   r.onresult=e=>{
-    const heard=e.results[0][0].transcript;const result=interpretVoice(heard);
+    const resultIndex=Number.isInteger(e.resultIndex)?e.resultIndex:0;
+    const heard=e.results[resultIndex]?.[0]?.transcript||e.results[0][0].transcript;
+    const result=interpretVoice(heard);
     $('commandInput').value=result.canonical||cleanSpeechText(heard);
-    if(!result.events.length){$('commandMessage').textContent=`Heard: “${heard}” — no usable measurement or story change found.`;return;}
-    const storyText=result.storyChanges.length?`${result.storyChanges.length} story transition${result.storyChanges.length===1?'':'s'} on the same house`:'';
-    const measurementText=result.commands.length?`${result.commands.length} measurement${result.commands.length===1?'':'s'}`:'';
-    $('commandMessage').textContent=`Heard: “${heard}” — understood ${[storyText,measurementText].filter(Boolean).join(' and ')}. Press Add Command.`;
+    if(applyInterpretedEvents(result,{heard,source:'voice'}))$('commandInput').value='';
   };
-  r.onerror=()=>{$('commandMessage').textContent='Voice entry did not complete.';};r.start();
+  r.onerror=e=>{$('commandMessage').textContent=e.error==='not-allowed'?'Microphone permission was blocked. Allow microphone access and try again.':'Voice entry did not complete. Try speaking the full command again.';};
+  r.onend=()=>{$('voiceBtn').disabled=false;};
+  try{r.start();}catch{$('voiceBtn').disabled=false;$('commandMessage').textContent='Voice entry could not start. Try again.';}
 }
 function departureCheck(){
   const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);

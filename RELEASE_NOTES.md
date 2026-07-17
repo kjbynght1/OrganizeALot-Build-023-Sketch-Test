@@ -41,6 +41,14 @@ Build 023 now treats a change from two stories to one story as a change **within
 6. Confirm the sketch displays separate `1 Story` and `2 Story` areas and the total square footage is correct.
 
 
+## Voice Story Auto-Apply Fix
+- Tapping **Speak & Apply** now applies the recognized command to the sketch immediately; it no longer only repeats the words in the text box.
+- `Begin 1 story, 17 feet forward` changes the same house to one story at the current corner, then draws the 17-foot wall as one story.
+- Commands spoken before the story change stay at the old story level; commands spoken after it use the new story level.
+- Added recognition for common variations such as `start 1 story`, `change to 1 story`, `drop to 1 story`, `return to 2 story`, and `storey`.
+- The status message confirms exactly what was heard and applied.
+- Updated the service-worker cache so the laptop loads this fix instead of the prior cached files.
+
 ## Clear/Delete regression fix
 - Restored reliable Clear Section and Delete Section button actions after the story-transition update.
 - Clear Section now removes all measurements and story transitions while keeping the section ready to redraw.
