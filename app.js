@@ -1,6 +1,6 @@
 'use strict';
 
-const VERSION = '2.1.0 Build 023 Voice Fix';
+const VERSION = '2.1.0 Build 023 Return Story Fix';
 const INSPECTION_PREFIX = 'organizealot_insp_';
 const SETTINGS_KEY = 'organizealot_settings_023';
 const DB_NAME = 'OrganizeALotPhotos';
@@ -238,9 +238,9 @@ function addSegment(dir,feet,{refresh=true}={}){
   if(refresh){drawSketch();renderSegmentList();renderTotals();loadShapeForm();}
   return true;
 }
-const NUMBER_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,half:.5,quarter:.25};
+const NUMBER_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90,first:1,second:2,third:3,fourth:4,fifth:5,sixth:6,seventh:7,eighth:8,ninth:9,tenth:10,half:.5,quarter:.25};
 function replaceNumberWords(text){
-  const parts=String(text||'').toLowerCase().replace(/-/g,' ').split(/\s+/);const out=[];let value=0,active=false;
+  const parts=String(text||'').toLowerCase().replace(/\b(\d+)(?:st|nd|rd|th)\b/g,'$1').replace(/-/g,' ').split(/\s+/);const out=[];let value=0,active=false;
   const flush=()=>{if(active){out.push(String(value));value=0;active=false;}};
   for(const part of parts){
     if(Object.hasOwn(NUMBER_WORDS,part)){value+=NUMBER_WORDS[part];active=true;continue;}
@@ -289,7 +289,7 @@ function parseVoiceEvents(text){
   const cleaned=cleanSpeechText(text);const events=[];
   // A story phrase changes the height for the NEXT wall run on the SAME structure.
   // The text before and after each phrase is parsed separately so spoken order is preserved.
-  const storyPattern=/\b(?:(?:begin|start|switch|change|now|set)(?:\s+back)?(?:\s+to)?\s*)?(\d+(?:\.\d+)?)\s*(?:story|stories|level|levels)\b/gi;
+  const storyPattern=/\b(?:(?:begin|start|star|switch|change|now|set|return)(?:\s+back)?(?:\s+to)?(?:\s+the)?\s*)?(\d+(?:\.\d+)?)\s*(?:story|stories|level|levels)\b/gi;
   let lastIndex=0;let match;
   while((match=storyPattern.exec(cleaned))){
     parseCommand(cleaned.slice(lastIndex,match.index)).forEach(c=>events.push({type:'segment',...c}));

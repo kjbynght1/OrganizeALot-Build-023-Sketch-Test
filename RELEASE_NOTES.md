@@ -54,3 +54,10 @@ Build 023 now treats a change from two stories to one story as a change **within
 - Clear Section now removes all measurements and story transitions while keeping the section ready to redraw.
 - Delete Section now visibly removes the selected section and selects the remaining section; deleting the last section creates a fresh blank Main House section.
 - Added explicit non-submit button behavior and refreshed the service-worker cache.
+
+
+## Return-to-two-story voice fix
+- Added recognition for `Start 2nd story`, `Start second story`, `Start the second story`, and `Star 2nd story`.
+- Spoken ordinal words such as `first` and `second`, plus typed or recognized forms such as `1st` and `2nd`, are converted to normal story numbers.
+- Returning from the one-story section to the two-story section now creates the second transition at the current corner and applies two stories to the next wall run.
+- Updated the service-worker cache so the corrected parser loads immediately.
