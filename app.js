@@ -1,11 +1,13 @@
 'use strict';
 
-const VERSION = '2.1.0 Build 023 Return Story Fix';
+const VERSION = '2.1.0 Build 023 Detached Spacing Fix';
 const INSPECTION_PREFIX = 'organizealot_insp_';
 const SETTINGS_KEY = 'organizealot_settings_023';
 const DB_NAME = 'OrganizeALotPhotos';
 const DB_VERSION = 1;
 const PHOTO_STORE = 'photos';
+const MIN_DETACHED_GAP_FT = 15;
+const DETACHED_SHAPE_TYPES = new Set(['other_living','detached_garage','outbuilding']);
 
 const NIIS_SECTIONS = [
   {name:'House Exterior',items:[
@@ -167,6 +169,9 @@ async function usePendingPhoto(){
 }
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
+function hasStoredOrigin(shape){
+  return shape&&shape.originX!==undefined&&shape.originX!==null&&shape.originX!==''&&shape.originY!==undefined&&shape.originY!==null&&shape.originY!=='';
+}
 function normalizeShape(shape){
   if(!shape)return shape;
   shape.segments=Array.isArray(shape.segments)?shape.segments:[];
@@ -174,15 +179,39 @@ function normalizeShape(shape){
   shape.segments.forEach(seg=>{seg.stories=Math.max(.25,Number(seg.stories)||shape.stories);});
   const lastStory=shape.segments.length?Number(shape.segments[shape.segments.length-1].stories):shape.stories;
   shape.activeStories=Math.max(.25,Number(shape.activeStories)||lastStory||shape.stories);
+  shape.originX=Number.isFinite(Number(shape.originX))?Number(shape.originX):0;
+  shape.originY=Number.isFinite(Number(shape.originY))?Number(shape.originY):0;
   return shape;
+}
+function isDetachedShapeType(type){return DETACHED_SHAPE_TYPES.has(type);}
+function boundsForShape(shape){
+  const pts=pointsFor(shape);return{
+    minX:Math.min(...pts.map(p=>p.x)),maxX:Math.max(...pts.map(p=>p.x)),
+    minY:Math.min(...pts.map(p=>p.y)),maxY:Math.max(...pts.map(p=>p.y))
+  };
+}
+function nextDetachedOrigin(excludeId=''){
+  const existing=(state.current.shapes||[]).filter(s=>s.id!==excludeId);
+  if(!existing.length)return{x:MIN_DETACHED_GAP_FT,y:0};
+  const bounds=existing.map(boundsForShape);
+  return{x:Math.max(...bounds.map(b=>b.maxX))+MIN_DETACHED_GAP_FT,y:Math.min(...bounds.map(b=>b.minY))};
 }
 function ensureSketch(){
   if(!state.current.shapes)state.current.shapes=[];
-  state.current.shapes.forEach(normalizeShape);
   if(!state.current.shapes.length)addDefaultShape();
+  state.current.shapes.forEach((shape,index)=>{
+    const storedOrigin=hasStoredOrigin(shape);
+    normalizeShape(shape);
+    if(index===0&&!storedOrigin){shape.originX=0;shape.originY=0;}
+    else if(index>0&&!storedOrigin&&isDetachedShapeType(shape.type)){
+      const prior=state.current.shapes.slice(0,index);const bounds=prior.map(boundsForShape);
+      shape.originX=Math.max(...bounds.map(b=>b.maxX))+MIN_DETACHED_GAP_FT;
+      shape.originY=Math.min(...bounds.map(b=>b.minY));
+    }
+  });
 }
 function addDefaultShape(){
-  const shape={id:uid('shape'),name:'Main House',type:'main_living',stories:1,activeStories:1,segments:[]};
+  const shape={id:uid('shape'),name:'Main House',type:'main_living',stories:1,activeStories:1,originX:0,originY:0,segments:[]};
   state.current.shapes.push(shape);return shape;
 }
 function selectedShape(){
@@ -209,8 +238,10 @@ function updateCurrentStoryMessage(message=''){
 function createShape(){
   const name=$('shapeName').value.trim()||`Section ${state.current.shapes.length+1}`;
   const type=$('shapeType').value;const stories=Math.max(.25,Number($('shapeStories').value)||1);
-  const shape={id:uid('shape'),name,type,stories,activeStories:stories,segments:[]};
+  const origin=isDetachedShapeType(type)?nextDetachedOrigin():{x:0,y:0};
+  const shape={id:uid('shape'),name,type,stories,activeStories:stories,originX:origin.x,originY:origin.y,segments:[]};
   state.current.shapes.push(shape);saveInspection();renderSketch();$('shapeSelect').value=shape.id;loadShapeForm();drawSketch();renderSegmentList();renderTotals();
+  updateCurrentStoryMessage(isDetachedShapeType(type)?`${name} starts ${MIN_DETACHED_GAP_FT} ft away from the nearest existing structure.`:`${name} is ready for measurements.`);
 }
 function setActiveStories(stories,{announce=true}={}){
   const s=selectedShape();if(!s)return false;
@@ -336,7 +367,7 @@ function addCommand(){
   if(applyInterpretedEvents(result))$('commandInput').value='';
 }
 function pointsFor(shape){
-  normalizeShape(shape);const pts=[{x:0,y:0}];let x=0,y=0;
+  normalizeShape(shape);let x=shape.originX,y=shape.originY;const pts=[{x,y}];
   shape.segments.forEach(seg=>{const d=DIRS[seg.dir];x+=d.dx*seg.feet;y+=d.dy*seg.feet;pts.push({x,y});});return pts;
 }
 function isClosed(shape){const p=pointsFor(shape);const a=p[0],b=p[p.length-1];return p.length>2&&Math.abs(a.x-b.x)<.01&&Math.abs(a.y-b.y)<.01;}
@@ -394,9 +425,10 @@ function storyCalculation(shape){
 }
 function calculatedArea(shape){return storyCalculation(shape).total;}
 function closeShape(){
-  const s=selectedShape();const pts=pointsFor(s);const end=pts[pts.length-1];if(Math.abs(end.x)<.01&&Math.abs(end.y)<.01)return;
-  if(Math.abs(end.x)>.01)addSegment(end.x>0?'L':'R',Math.abs(end.x),{refresh:false});
-  if(Math.abs(end.y)>.01)addSegment(end.y>0?'F':'B',Math.abs(end.y),{refresh:false});
+  const s=selectedShape();const pts=pointsFor(s);const start=pts[0],end=pts[pts.length-1];const dx=end.x-start.x,dy=end.y-start.y;
+  if(Math.abs(dx)<.01&&Math.abs(dy)<.01)return;
+  if(Math.abs(dx)>.01)addSegment(dx>0?'L':'R',Math.abs(dx),{refresh:false});
+  if(Math.abs(dy)>.01)addSegment(dy>0?'F':'B',Math.abs(dy),{refresh:false});
   saveInspection();drawSketch();renderSegmentList();renderTotals();loadShapeForm();
 }
 function undoSegment(){

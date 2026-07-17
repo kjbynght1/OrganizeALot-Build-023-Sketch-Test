@@ -61,3 +61,10 @@ Build 023 now treats a change from two stories to one story as a change **within
 - Spoken ordinal words such as `first` and `second`, plus typed or recognized forms such as `1st` and `2nd`, are converted to normal story numbers.
 - Returning from the one-story section to the two-story section now creates the second transition at the current corner and applies two stories to the next wall run.
 - Updated the service-worker cache so the corrected parser loads immediately.
+
+
+## Detached-structure spacing fix
+- New detached guest houses, detached garages, and outbuildings are automatically placed to the right of the existing sketch with a minimum 15-foot clear gap.
+- Existing detached sections created before this update are migrated to the same minimum spacing when they did not already have a stored position.
+- Closing a detached outline now returns to that structure's own starting point rather than the Main House origin.
+- Updated the service-worker cache so the new spacing loads immediately.
