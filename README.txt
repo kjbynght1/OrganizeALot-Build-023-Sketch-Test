@@ -1,3 +1,14 @@
+OrganizeALot Build 023 + Order Import / Field Sheet
+
+NEW IN THIS COPY:
+1. Start a NIIS inspection and tap Import Order Screenshot.
+2. Choose the NIIS order screenshot and tap Read Screenshot.
+3. Review/correct every extracted field, then tap Use These Details.
+4. From the inspection dashboard, tap Field Sheet.
+5. Tap Print Field Sheet and choose TWO-SIDED / FLIP ON LONG EDGE in the print dialog.
+
+The front prints the order/field information and checklist. The back prints a 1/4-inch graph for the manual house sketch.
+
 OrganizeALot Build 023 — Story Transition Test
 
 This update keeps Build 022 untouched.

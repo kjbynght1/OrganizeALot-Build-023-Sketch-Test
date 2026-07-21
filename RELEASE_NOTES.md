@@ -1,3 +1,20 @@
+# OrganizeALot v2.1.0 Build 023 + Order Import / Field Sheet
+
+## Added
+- Import an NIIS order screenshot from the new inspection setup screen.
+- Client-side OCR reads common NIIS fields such as Inspection ID, policy number, insured, address, dates, client, year built, square footage, Coverage A, county, appointment requirement, and preferred contact method.
+- Every extracted field is shown in an editable review screen before it is used.
+- New Field Sheet button on the inspection dashboard.
+- Two-page printable field sheet: inspection/order information and photo checklist on the front; full 1/4-inch sketch grid on the back.
+- Print window reminds the inspector to use two-sided printing and flip on the long edge.
+
+## Important
+- Build 023 voice drawing behavior is preserved.
+- Screenshot OCR requires internet access the first time the OCR library is loaded. If OCR is unavailable, fields can still be entered or corrected manually.
+- Always verify OCR values before saving.
+
+---
+
 # OrganizeALot v2.1.0 Build 023 — Story Transition Test
 
 Build 022 remains the locked working baseline. This is a separate Build 023 test update.

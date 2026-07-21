@@ -44,3 +44,12 @@ footer{position:fixed;z-index:12;bottom:0;left:0;right:0;background:#020617;bord
 .story-change{display:block;margin-top:.3rem;font-weight:800;color:#92400e}.warning-text{color:#9a3412}
 
 .voice-draw-btn{margin-top:12px;font-size:18px;min-height:52px}
+
+
+.order-import-card{border-color:var(--accent2)}
+.order-preview{display:block;max-width:100%;max-height:46vh;object-fit:contain;margin:12px auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+.order-status{margin-top:10px;min-height:20px}
+.order-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.order-grid label{margin:8px 0}.order-grid .span-2{grid-column:1/-1}.order-check{align-self:end;margin-bottom:14px!important;background:#020617;border:1px solid var(--line);padding:13px;border-radius:12px;color:var(--text)}
+.order-check input{width:auto;margin:2px 8px 0 0}
+@media(max-width:620px){.order-grid{grid-template-columns:1fr}.order-grid .span-2{grid-column:auto}}

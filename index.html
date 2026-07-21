@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
-  <title>OrganizeALot Build 023</title>
+  <title>OrganizeALot Build 023 + Order Import & Field Sheet</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -12,7 +12,7 @@
 <header class="app-header">
   <div>
     <h1>OrganizeALot</h1>
-    <p>Inspection Assistant · Build 023</p>
+    <p>Inspection Assistant · Build 023 + Order Import & Field Sheet</p>
   </div>
   <button id="installBtn" class="small hidden">Install</button>
 </header>
@@ -21,7 +21,7 @@
   <section id="homeScreen" class="screen active">
     <div class="hero-card">
       <h2>Start an Inspection</h2>
-      <p>Build 023 keeps the inspection workflow and adds a 2D NIIS reference sketch.</p>
+      <p>Build 023 keeps the inspection workflow and now adds NIIS order screenshot import plus a two-sided printable field sheet.</p>
     </div>
     <div class="grid">
       <button class="tile" data-type="NIIS Residential">🏠<span>NIIS Residential</span><small>Photos + 2D sketch</small></button>
@@ -53,9 +53,60 @@
     <label>Inspector
       <input id="inspector" value="Chris Roberts" autocomplete="name" />
     </label>
+    <div class="card order-import-card">
+      <strong>Have an NIIS order screenshot?</strong>
+      <p class="muted small-text">Import the screenshot, let OrganizeALot read the order, then review every field before using it.</p>
+      <button id="setupImportOrderBtn" class="secondary wide" type="button">📄 Import Order Screenshot</button>
+    </div>
     <div class="button-row">
       <button id="setupWazeBtn" class="secondary">Open Waze</button>
       <button id="startBtn" class="primary">Start Inspection</button>
+    </div>
+  </section>
+
+  <section id="orderImportScreen" class="screen">
+    <div class="dash-top">
+      <button id="orderImportBackBtn" class="back" type="button">← Back</button>
+      <button id="saveOrderInfoBtn" class="secondary" type="button">Save Details</button>
+    </div>
+    <h2>Order Screenshot / Field Sheet</h2>
+    <div class="notice">
+      <strong>Review before saving.</strong> Screenshot reading is tuned for NIIS order screens. OCR can misread numbers, so check the Inspection ID, address, dates, year built, square footage, and policy information.
+    </div>
+    <div class="card">
+      <h3>1) Choose the order screenshot</h3>
+      <input id="orderScreenshotInput" type="file" accept="image/*" />
+      <img id="orderScreenshotPreview" class="order-preview hidden" alt="Order screenshot preview" />
+      <button id="readOrderScreenshotBtn" class="primary wide" type="button" disabled>Read Screenshot</button>
+      <div id="orderOcrStatus" class="muted small-text order-status">No screenshot selected.</div>
+    </div>
+
+    <div class="card">
+      <h3>2) Review the information</h3>
+      <div class="order-grid">
+        <label>Inspection ID<input id="orderInspectionId" autocomplete="off" /></label>
+        <label>Policy #<input id="orderPolicyNumber" autocomplete="off" /></label>
+        <label>Valuation ID<input id="orderValuationId" autocomplete="off" /></label>
+        <label>Insured<input id="orderInsuredName" autocomplete="off" /></label>
+        <label class="span-2">Street Address<input id="orderStreetAddress" autocomplete="street-address" /></label>
+        <label class="span-2">City / State / ZIP<input id="orderCityStateZip" autocomplete="off" /></label>
+        <label>Phone<input id="orderPhone" inputmode="tel" /></label>
+        <label>County<input id="orderCounty" /></label>
+        <label>Date Ordered<input id="orderDateOrdered" placeholder="MM/DD/YYYY" /></label>
+        <label>Date Due<input id="orderDateDue" placeholder="MM/DD/YYYY" /></label>
+        <label>Date Effective<input id="orderDateEffective" placeholder="MM/DD/YYYY" /></label>
+        <label>Year Built<input id="orderYearBuilt" inputmode="numeric" /></label>
+        <label>Square Footage<input id="orderSquareFeet" inputmode="numeric" /></label>
+        <label>Coverage A<input id="orderCoverageA" /></label>
+        <label class="span-2">Client<input id="orderClient" /></label>
+        <label class="span-2">Report Type<input id="orderReportType" /></label>
+        <label>Preferred Contact<input id="orderPreferredContact" /></label>
+        <label class="checkbox-row order-check"><input id="orderAppointmentRequired" type="checkbox" /> Appointment required</label>
+      </div>
+      <div class="button-row">
+        <button id="applyOrderToInspectionBtn" class="primary" type="button">Use These Details</button>
+        <button id="printOrderFieldSheetBtn" class="secondary" type="button">🖨 Print Field Sheet</button>
+      </div>
     </div>
   </section>
 
@@ -71,6 +122,7 @@
       <button id="wazeBtn" class="dashboard-action">🧭<span>Waze</span><small>Navigate to property</small></button>
       <button id="photosBtn" class="dashboard-action">📷<span>Photos</span><small id="photoProgressText">0 required complete</small></button>
       <button id="sketchBtn" class="dashboard-action">📐<span>2D Sketch</span><small id="sketchSummaryText">No sketch yet</small></button>
+      <button id="fieldSheetBtn" class="dashboard-action">🖨<span>Field Sheet</span><small>Order info + graph on back</small></button>
       <button id="reviewBtn" class="dashboard-action">✅<span>Departure Check</span><small>Review missing items</small></button>
     </div>
 
@@ -221,7 +273,7 @@
 
 <footer>
   <button id="settingsBtn" class="footer-button">Settings</button>
-  <span>OrganizeALot v2.1.0 Build 023 Voice Button Move</span>
+  <span>OrganizeALot v2.1.0 Build 023 + Order Import / Field Sheet</span>
 </footer>
 
 <script src="app.js"></script>

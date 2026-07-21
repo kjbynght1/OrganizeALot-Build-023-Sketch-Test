@@ -1,6 +1,6 @@
 {
-  "name":"OrganizeALot Inspection Assistant Build 023",
-  "short_name":"OrganizeALot 023",
+  "name":"OrganizeALot Build 023 Order Import Field Sheet",
+  "short_name":"OrganizeALot 023+Print",
   "start_url":"./index.html",
   "scope":"./",
   "display":"standalone",

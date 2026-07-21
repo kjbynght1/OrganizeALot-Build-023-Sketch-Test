@@ -1,8 +1,9 @@
 'use strict';
 
-const VERSION = '2.1.0 Build 023 Speak Button Move';
+const VERSION = '2.1.0 Build 023 + Order Import / Field Sheet';
 const INSPECTION_PREFIX = 'organizealot_insp_';
 const SETTINGS_KEY = 'organizealot_settings_023';
+const OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 const DB_NAME = 'OrganizeALotPhotos';
 const DB_VERSION = 1;
 const PHOTO_STORE = 'photos';
@@ -47,9 +48,9 @@ const SHAPE_TYPES = {
 };
 const DIRS = {F:{dx:0,dy:-1,label:'Forward'},R:{dx:1,dy:0,label:'Right'},B:{dx:0,dy:1,label:'Back'},L:{dx:-1,dy:0,label:'Left'}};
 
-const state = {current:null,pendingItem:null,pendingFile:null,pendingDataUrl:null,selectedDir:'F',deferredInstall:null,db:null};
+const state = {current:null,pendingItem:null,pendingFile:null,pendingDataUrl:null,selectedDir:'F',deferredInstall:null,db:null,orderScreenshotFile:null,orderReturnScreen:'setupScreen'};
 const $ = id => document.getElementById(id);
-const screens = ['homeScreen','setupScreen','dashboardScreen','photosScreen','cameraScreen','sketchScreen','reviewScreen','settingsScreen'];
+const screens = ['homeScreen','setupScreen','orderImportScreen','dashboardScreen','photosScreen','cameraScreen','sketchScreen','reviewScreen','settingsScreen'];
 
 function show(id){
   screens.forEach(s=>$(s).classList.toggle('active',s===id));
@@ -69,7 +70,7 @@ function sectionsFor(type){if(type==='Preferred Reports')return PREFERRED_SECTIO
 function newInspection(type){
   const inspection={
     key:INSPECTION_PREFIX+uid('insp'),type,inspectionId:'',address:'',insuredName:'',inspector:'Chris Roberts',
-    created:new Date().toISOString(),updated:new Date().toISOString(),photoItems:{},shapes:[]
+    created:new Date().toISOString(),updated:new Date().toISOString(),photoItems:{},shapes:[],orderInfo:{}
   };
   sectionsFor(type).forEach(section=>section.items.forEach(([key,title,help])=>{
     inspection.photoItems[key]={key,title,help,section:section.name,required:true,photoIds:[],note:'',cannotGet:false};
@@ -115,6 +116,132 @@ function renderDashboard(){
 function openWaze(address){
   const q=encodeURIComponent(address||'');if(!q)return;
   window.open(`https://www.waze.com/ul?q=${q}&navigate=yes`,'_blank','noopener');
+}
+
+
+const ORDER_FIELDS = {
+  inspectionId:'orderInspectionId',policyNumber:'orderPolicyNumber',valuationId:'orderValuationId',insuredName:'orderInsuredName',
+  streetAddress:'orderStreetAddress',cityStateZip:'orderCityStateZip',phone:'orderPhone',county:'orderCounty',
+  dateOrdered:'orderDateOrdered',dateDue:'orderDateDue',dateEffective:'orderDateEffective',yearBuilt:'orderYearBuilt',
+  squareFeet:'orderSquareFeet',coverageA:'orderCoverageA',client:'orderClient',reportType:'orderReportType',preferredContact:'orderPreferredContact'
+};
+function blankOrderInfo(){return{inspectionId:'',policyNumber:'',valuationId:'',insuredName:'',streetAddress:'',cityStateZip:'',phone:'',county:'',dateOrdered:'',dateDue:'',dateEffective:'',yearBuilt:'',squareFeet:'',coverageA:'',client:'',reportType:'',preferredContact:'',appointmentRequired:false};}
+function currentOrderInfo(){
+  const c=state.current||{};const oi={...blankOrderInfo(),...(c.orderInfo||{})};
+  oi.inspectionId=oi.inspectionId||c.inspectionId||'';oi.insuredName=oi.insuredName||c.insuredName||'';
+  if(!oi.streetAddress&&!oi.cityStateZip&&c.address){oi.streetAddress=c.address;}
+  return oi;
+}
+function setOrderForm(info={}){
+  const oi={...blankOrderInfo(),...info};
+  Object.entries(ORDER_FIELDS).forEach(([key,id])=>{if($(id))$(id).value=oi[key]||'';});
+  $('orderAppointmentRequired').checked=!!oi.appointmentRequired;
+}
+function getOrderForm(){
+  const oi=blankOrderInfo();Object.entries(ORDER_FIELDS).forEach(([key,id])=>{oi[key]=$(id).value.trim();});
+  oi.appointmentRequired=$('orderAppointmentRequired').checked;return oi;
+}
+function joinOrderAddress(oi){return [oi.streetAddress,oi.cityStateZip].filter(Boolean).join(', ');}
+function openOrderImport(returnScreen='setupScreen'){
+  state.orderReturnScreen=returnScreen;state.orderScreenshotFile=null;$('orderScreenshotInput').value='';$('orderScreenshotPreview').src='';$('orderScreenshotPreview').classList.add('hidden');$('readOrderScreenshotBtn').disabled=true;$('orderOcrStatus').textContent='No screenshot selected.';
+  setOrderForm(currentOrderInfo());show('orderImportScreen');
+}
+function applyOrderInfo({returnAfter=true}={}){
+  if(!state.current)return false;const oi=getOrderForm();state.current.orderInfo=oi;
+  if(oi.inspectionId)state.current.inspectionId=oi.inspectionId;
+  if(oi.insuredName)state.current.insuredName=oi.insuredName;
+  const fullAddress=joinOrderAddress(oi);if(fullAddress)state.current.address=fullAddress;
+  if($('inspectionId'))$('inspectionId').value=state.current.inspectionId||'';
+  if($('insuredName'))$('insuredName').value=state.current.insuredName||'';
+  if($('address'))$('address').value=state.current.address||'';
+  saveInspection();
+  if(returnAfter)show(state.orderReturnScreen||'setupScreen');
+  return true;
+}
+function lineValue(text,labelPattern){
+  const re=new RegExp('(?:^|\\n)\\s*'+labelPattern+'\\s*[:#]?\\s*([^\\n]+)','i');const m=String(text||'').match(re);return m?m[1].trim():'';
+}
+function cleanOcrValue(v){return String(v||'').replace(/[|]/g,'I').replace(/\s{2,}/g,' ').trim();}
+function firstCapture(text,patterns){for(const p of patterns){const m=String(text||'').match(p);if(m&&m[1])return cleanOcrValue(m[1]);}return'';}
+function parseNiisOrderText(raw){
+  const text=String(raw||'').replace(/\r/g,'').replace(/[“”]/g,'"');const one=text.replace(/[ \t]+/g,' ');
+  const oi=blankOrderInfo();
+  oi.inspectionId=firstCapture(text,[/\bID\s*#\s*([A-Z0-9-]{5,20})\b/i,/Inspection\s*(?:ID|#)\s*[:#]?\s*([A-Z0-9-]{4,20})/i]);
+  oi.policyNumber=firstCapture(text,[/Policy\s*#?\s*:?\s*([A-Z0-9-]{5,30})/i]);
+  oi.valuationId=firstCapture(text,[/Valuation\s*ID\s*:?\s*([A-Z0-9-]+)/i]);
+  oi.insuredName=firstCapture(text,[/(?:^|\n)\s*Insured\s*:?\s*([^\n]+)/i]);
+  oi.streetAddress=firstCapture(text,[/(?:^|\n)\s*Address\s*:?\s*([^\n]+)/i]);
+  oi.cityStateZip=firstCapture(text,[/(?:^|\n)\s*City\s*\/\s*State\s*\/\s*Zip\s*:?\s*([^\n]+)/i,/(?:^|\n)\s*City\/State\/Zip\s*:?\s*([^\n]+)/i]);
+  oi.phone=firstCapture(text,[/(?:^|\n)\s*Phone\s*:?\s*([0-9()\- .]{7,20})/i]);
+  oi.dateOrdered=firstCapture(text,[/Date\s*Ordered\s*:?\s*([0-9]{1,2}[\/.-][0-9]{1,2}[\/.-][0-9]{2,4})/i]);
+  oi.dateDue=firstCapture(text,[/Date\s*Due\s*:?\s*([0-9]{1,2}[\/.-][0-9]{1,2}[\/.-][0-9]{2,4})/i]);
+  oi.dateEffective=firstCapture(text,[/Date\s*Effective\s*:?\s*([0-9]{1,2}[\/.-][0-9]{1,2}[\/.-][0-9]{2,4})/i]);
+  oi.client=firstCapture(text,[/(?:^|\n)\s*Client\s*:?\s*([^\n]+)/i]);
+  oi.yearBuilt=firstCapture(text,[/Client\s*Year\s*Built\s*:?\s*(\d{4})/i,/(?:^|\n)\s*Year\s*Built\s*:?\s*(\d{4})/i]);
+  oi.squareFeet=firstCapture(text,[/Client\s*Sq\s*Ft\s*:?\s*([0-9,]+)/i,/Client\s*SqFt\s*:?\s*([0-9,]+)/i,/Square\s*Footage\s*:?\s*([0-9,]+)/i]);
+  oi.coverageA=firstCapture(text,[/Client\s*Cov\s*A\s*:?\s*(\$?\s*[0-9,]+(?:\.\d{2})?)/i,/Coverage\s*A\s*:?\s*(\$?\s*[0-9,]+(?:\.\d{2})?)/i]);
+  oi.county=firstCapture(text,[/(?:^|\n)\s*County\s*:?\s*([A-Z][A-Z .'-]{2,30})/i]);
+  const report=one.match(/Property\s+Interior\s*\/\s*Exterior\s+ITV\s+Report/i);oi.reportType=report?report[0].replace(/\s*\/\s*/g,'/'):'';
+  oi.appointmentRequired=/Appointment\s+Required/i.test(one);
+  oi.preferredContact=firstCapture(text,[/Preferred\s*Contact\s*Method\s*:?\s*([A-Z ]{3,20})/i]);
+  // Clean OCR spill-over where a value runs into the next label.
+  const labels=['Valuation','Insured','Address','City','Phone','Date','Client','County','Tax','Agent','Policy'];
+  for(const key of ['policyNumber','valuationId','insuredName','streetAddress','cityStateZip','phone','client','county']){
+    let v=oi[key];for(const label of labels){const idx=v.search(new RegExp('\\s+'+label+'\\s*[:#]','i'));if(idx>0)v=v.slice(0,idx).trim();}oi[key]=v;
+  }
+  return oi;
+}
+function mergeOrderInfo(existing,extracted){const out={...blankOrderInfo(),...existing};Object.entries(extracted||{}).forEach(([k,v])=>{if(v!==''&&v!==false)out[k]=v;if(k==='appointmentRequired'&&v===true)out[k]=true;});return out;}
+function loadOcrScript(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  return new Promise((resolve,reject)=>{const existing=document.querySelector('script[data-oal-ocr]');if(existing){existing.addEventListener('load',()=>resolve(window.Tesseract),{once:true});existing.addEventListener('error',()=>reject(new Error('OCR failed to load')),{once:true});return;}const script=document.createElement('script');script.src=OCR_SCRIPT_URL;script.async=true;script.dataset.oalOcr='1';script.onload=()=>resolve(window.Tesseract);script.onerror=()=>reject(new Error('OCR library could not be downloaded. Check your internet connection.'));document.head.appendChild(script);});
+}
+async function onOrderScreenshotChange(e){
+  const file=e.target.files?.[0];if(!file)return;state.orderScreenshotFile=file;$('orderScreenshotPreview').src=await readAsDataUrl(file);$('orderScreenshotPreview').classList.remove('hidden');$('readOrderScreenshotBtn').disabled=false;$('orderOcrStatus').textContent='Screenshot ready. Tap Read Screenshot.';
+}
+async function readOrderScreenshot(){
+  if(!state.orderScreenshotFile)return;$('readOrderScreenshotBtn').disabled=true;$('orderOcrStatus').textContent='Loading screenshot reader… First use may take a minute.';
+  try{
+    const T=await loadOcrScript();
+    const result=await T.recognize(state.orderScreenshotFile,'eng',{logger:m=>{if(m.status){const pct=Number.isFinite(m.progress)?` ${Math.round(m.progress*100)}%`:'';$('orderOcrStatus').textContent=`${m.status}${pct}`;}}});
+    const text=result?.data?.text||'';const extracted=parseNiisOrderText(text);setOrderForm(mergeOrderInfo(getOrderForm(),extracted));
+    const found=Object.entries(extracted).filter(([k,v])=>k!=='appointmentRequired'&&v).length+(extracted.appointmentRequired?1:0);
+    $('orderOcrStatus').textContent=`Screenshot read complete. ${found} fields found. Please check every field before using it.`;
+  }catch(err){console.error(err);$('orderOcrStatus').textContent=`Could not read the screenshot automatically: ${err.message||err}. You can still type/correct the fields below.`;}
+  finally{$('readOrderScreenshotBtn').disabled=false;}
+}
+function escPrint(v){return escapeHtml(v||'');}
+function printValue(v){return escPrint(v||'');}
+function buildGraphSvg(){
+  const w=568.8,h=664.2,step=18;let lines=[];
+  for(let x=0,i=0;x<=w+.1;x+=step,i++)lines.push(`<line x1="${x}" y1="0" x2="${x}" y2="${h}" stroke="#000" stroke-width="${i%4===0?.7:.22}"/>`);
+  for(let y=0,i=0;y<=h+.1;y+=step,i++)lines.push(`<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="#000" stroke-width="${i%4===0?.7:.22}"/>`);
+  return `<svg class="graph-svg" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg" aria-label="One quarter inch sketch grid"><rect width="${w}" height="${h}" fill="white" stroke="#000" stroke-width="1"/>${lines.join('')}</svg>`;
+}
+function printFieldSheet(){
+  if(!state.current)return;const oi={...currentOrderInfo(),...getOrderForm()};const c=state.current;
+  const fullAddress=joinOrderAddress(oi)||c.address||'';
+  const exterior=['Address / House Number','Front Elevation','Rear Elevation','Left Side','Right Side','Street View','Front Roof','Rear Roof','Roof Close-Up','Exterior Wall / Foundation','Electrical Meter','Outbuildings (if any)','Pool / Spa / Trampoline (if applicable)'];
+  const interior=['Living Area','Kitchen','Bathroom(s)','Electrical Panel - Closed','Electrical Panel - Open','Panel Label / Data','HVAC Unit','HVAC Data Plate','Water Heater','Water Heater Data Plate','Basement / Crawl Access','Upstairs Landing / Hallway (if applicable)','Water Damage / Other Concern'];
+  const field=(label,value='')=>`<div class="field"><span>${escPrint(label)}</span><b>${printValue(value)}</b></div>`;
+  const check=list=>list.map(x=>`<div class="check"><i></i>${escPrint(x)}</div>`).join('');
+  const detailsLeft=['Stories','Occupancy','Roof Type','Roof Age','Roof Condition','Foundation Type'];
+  const detailsRight=['HVAC Type / Age','Electrical Service','Panel / Amps','Water Heater / Age','Plumbing Type','Exterior Wall'];
+  const details=detailsLeft.map((x,i)=>`${field(x+':','')}${field(detailsRight[i]+':','')}`).join('');
+  const appointment=oi.appointmentRequired?'APPOINTMENT REQUIRED':'Appointment: ____________________';
+  const reportType=oi.reportType||c.type||'Insurance Inspection';
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>${escPrint(c.inspectionId||'Inspection')} Field Sheet</title><style>
+  @page{size:letter;margin:.28in}*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;font-size:9pt}.page{width:7.94in;min-height:10.44in;page-break-after:always;break-after:page}.page:last-child{page-break-after:auto;break-after:auto}h1{font-size:18pt;text-align:center;margin:0 0 2pt}h2{font-size:9pt;text-align:center;margin:0 0 8pt}.two{display:grid;grid-template-columns:1fr 1fr;gap:0 6pt}.field{display:grid;grid-template-columns:1.25in 1fr;border:1px solid #000;min-height:.27in;margin-top:-1px}.field span{padding:4pt;border-right:1px solid #000}.field b{padding:4pt;font-size:9pt;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.banner{border:1px solid #000;margin-top:7pt;padding:6pt;display:flex;justify-content:space-between;font-weight:700}.section{font-weight:700;font-size:10pt;margin:8pt 0 3pt}.details{display:grid;grid-template-columns:1fr 1fr;gap:0 6pt}.checks{display:grid;grid-template-columns:1fr 1fr;gap:0 22pt}.check{height:16pt;display:flex;align-items:center}.check i{width:9pt;height:9pt;border:1px solid #000;margin-right:5pt}.notes{height:1.25in;border:1px solid #000;background:repeating-linear-gradient(to bottom,transparent 0,transparent .20in,#999 .205in)}.small{font-size:7.5pt}.graph-head{height:.48in;display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:4pt}.graph-head h1{text-align:left;font-size:15pt}.graph-svg{display:block;width:7.9in;height:9.225in}.north{font-weight:700}.print-tip{position:fixed;top:8px;right:8px;background:#fff3cd;border:1px solid #a16207;padding:8px;font-size:12px;z-index:10}@media print{.print-tip{display:none}}
+  </style></head><body><div class="print-tip">Print 2-sided • Flip on long edge</div>
+  <section class="page"><h1>INSURANCE INSPECTION FIELD SHEET</h1><h2>${escPrint(reportType)}</h2>
+  <div class="two">${field('Insured Name:',oi.insuredName||c.insuredName)}${field('Inspection ID #:',oi.inspectionId||c.inspectionId)}${field('Property Address:',oi.streetAddress||fullAddress)}${field('Policy #:',oi.policyNumber)}${field('City / State / ZIP:',oi.cityStateZip)}${field('Valuation ID:',oi.valuationId)}${field('Phone:',oi.phone)}${field('County:',oi.county)}${field('Client:',oi.client)}${field('Coverage A:',oi.coverageA)}${field('Date Ordered:',oi.dateOrdered)}${field('Date Due:',oi.dateDue)}${field('Date Effective:',oi.dateEffective)}${field('Date Inspected:','')}${field('Year Built:',oi.yearBuilt)}${field('Square Footage:',oi.squareFeet)}</div>
+  <div class="banner"><span>${escPrint(appointment)}</span><span>Preferred Contact: ${printValue(oi.preferredContact)}</span></div>
+  <div class="section">PROPERTY / SYSTEM DETAILS</div><div class="details">${details}</div>
+  <div class="section">PHOTO CHECKLIST</div><div class="checks"><div><b>EXTERIOR</b>${check(exterior)}</div><div><b>INTERIOR / MECHANICALS</b>${check(interior)}</div></div>
+  <div class="section">FIELD NOTES / HAZARDS / FOLLOW-UP PHOTOS</div><div class="notes"></div><div class="small" style="text-align:right;margin-top:3pt">Manual property sketch and measurements on back — 1/4&quot; grid</div></section>
+  <section class="page"><div class="graph-head"><div><h1>PROPERTY SKETCH / MEASUREMENTS</h1><span class="small">Inspection ID: ${printValue(oi.inspectionId||c.inspectionId)} &nbsp;&nbsp; Address: ${printValue(fullAddress)}</span></div><div><span>Scale: 1 square = ______ ft</span> &nbsp;&nbsp; <span class="north">↑ N</span></div></div>${buildGraphSvg()}</section>
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),350));<\/script></body></html>`;
+  const w=window.open('','_blank');if(!w){alert('The print window was blocked. Allow pop-ups for OrganizeALot and try again.');return;}w.document.open();w.document.write(html);w.document.close();
 }
 
 function renderPhotos(){
@@ -589,7 +716,10 @@ function dbDelete(id){return new Promise((resolve,reject)=>{const r=dbTx('readwr
 function wireEvents(){
   document.querySelectorAll('.tile').forEach(b=>b.onclick=()=>{newInspection(b.dataset.type);$('setupTitle').textContent=`New ${b.dataset.type} Inspection`;$('inspectionId').value='';$('address').value='';$('insuredName').value='';$('inspector').value='Chris Roberts';show('setupScreen');});
   document.querySelectorAll('[data-screen]').forEach(b=>b.onclick=()=>show(b.dataset.screen));
-  $('startBtn').onclick=()=>{const id=$('inspectionId').value.trim(),address=$('address').value.trim();if(!id||!address){alert('Enter both the Inspection ID and property address.');return;}Object.assign(state.current,{inspectionId:id,address,insuredName:$('insuredName').value.trim(),inspector:$('inspector').value.trim()||'Chris Roberts'});saveInspection();show('dashboardScreen');};
+  $('setupImportOrderBtn').onclick=()=>openOrderImport('setupScreen');$('orderImportBackBtn').onclick=()=>show(state.orderReturnScreen||'setupScreen');
+  $('orderScreenshotInput').addEventListener('change',onOrderScreenshotChange);$('readOrderScreenshotBtn').onclick=readOrderScreenshot;
+  $('applyOrderToInspectionBtn').onclick=()=>applyOrderInfo({returnAfter:true});$('saveOrderInfoBtn').onclick=()=>applyOrderInfo({returnAfter:true});$('printOrderFieldSheetBtn').onclick=printFieldSheet;$('fieldSheetBtn').onclick=()=>openOrderImport('dashboardScreen');
+  $('startBtn').onclick=()=>{const id=$('inspectionId').value.trim(),address=$('address').value.trim();if(!id||!address){alert('Enter both the Inspection ID and property address.');return;}Object.assign(state.current,{inspectionId:id,address,insuredName:$('insuredName').value.trim(),inspector:$('inspector').value.trim()||'Chris Roberts'});state.current.orderInfo={...blankOrderInfo(),...(state.current.orderInfo||{}),inspectionId:id,insuredName:state.current.insuredName};if(!state.current.orderInfo.streetAddress&&!state.current.orderInfo.cityStateZip)state.current.orderInfo.streetAddress=address;saveInspection();show('dashboardScreen');};
   $('setupWazeBtn').onclick=()=>openWaze($('address').value.trim());$('wazeBtn').onclick=()=>openWaze(state.current?.address);
   $('saveBtn').onclick=()=>{saveInspection();renderDashboard();};$('photosSaveBtn').onclick=()=>{saveInspection();renderPhotos();};$('photosBtn').onclick=()=>show('photosScreen');$('sketchBtn').onclick=()=>show('sketchScreen');$('reviewBtn').onclick=departureCheck;$('exportBtn').onclick=exportInspection;
   $('deleteInspectionBtn').onclick=()=>{if(!state.current||!confirm(`Delete inspection ${state.current.inspectionId}?`))return;localStorage.removeItem(state.current.key);state.current=null;show('homeScreen');};
