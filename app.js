@@ -49,6 +49,7 @@ const SHAPE_TYPES = {
 const DIRS = {F:{dx:0,dy:-1,label:'Forward'},R:{dx:1,dy:0,label:'Right'},B:{dx:0,dy:1,label:'Back'},L:{dx:-1,dy:0,label:'Left'}};
 
 const state = {current:null,pendingItem:null,pendingFile:null,pendingDataUrl:null,selectedDir:'F',deferredInstall:null,db:null,orderScreenshotFile:null,orderReturnScreen:'setupScreen'};
+const GallerySaver=(window.Capacitor&&typeof window.Capacitor.registerPlugin==='function')?window.Capacitor.registerPlugin('GallerySaver'):null;
 const $ = id => document.getElementById(id);
 const screens = ['homeScreen','setupScreen','orderImportScreen','dashboardScreen','photosScreen','cameraScreen','sketchScreen','reviewScreen','settingsScreen'];
 
@@ -286,12 +287,28 @@ async function onCameraChange(e){
   state.pendingFile=file;state.pendingDataUrl=await readAsDataUrl(file);$('cameraPreview').src=state.pendingDataUrl;$('cameraPreview').classList.remove('hidden');$('usePhotoBtn').disabled=false;
   $('cameraStatus').innerHTML=`<strong>Preview ready.</strong> Check framing, blur, glare, darkness, and roof sun distortion before using the photo.`;$('cameraStatus').classList.remove('hidden');
 }
+function isNativeAndroid(){return !!(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android');}
+function blobToBase64(blob){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>{const v=String(r.result||'');resolve(v.includes(',')?v.split(',')[1]:v);};r.onerror=()=>reject(r.error||new Error('Could not read photo'));r.readAsDataURL(blob);});}
+function extensionForMime(mime){const m=String(mime||'').toLowerCase();if(m.includes('png'))return'png';if(m.includes('webp'))return'webp';if(m.includes('heic'))return'heic';if(m.includes('heif'))return'heif';return'jpg';}
+function compactTimestamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}_${String(d.getMilliseconds()).padStart(3,'0')}`;}
+async function saveAcceptedPhotoToGallery(file,item){
+  if(!isNativeAndroid()||!GallerySaver)return {saved:false,reason:'not_native'};
+  const inspectionFolder=sanitizeFileName(state.current?.inspectionId||'Inspection');
+  const ext=extensionForMime(file.type);const fileName=`${inspectionFolder}_${sanitizeFileName(item?.title||item?.key||'Photo')}_${compactTimestamp()}.${ext}`;
+  const data=await blobToBase64(file);
+  return GallerySaver.saveImage({data,fileName,mimeType:file.type||'image/jpeg',albumName:'OrganizeALot',inspectionFolder});
+}
 async function usePendingPhoto(){
   if(!state.pendingFile||!state.pendingItem)return;
   const item=state.current.photoItems[state.pendingItem];const photoId=uid('photo');
   await dbPut({id:photoId,blob:state.pendingFile,name:state.pendingFile.name||`${item.key}.jpg`,type:state.pendingFile.type||'image/jpeg',created:new Date().toISOString(),inspectionKey:state.current.key,itemKey:item.key});
   item.photoIds.push(photoId);item.note=$('photoNote').value.trim();item.cannotGet=false;saveInspection();
-  if(settings().galleryBackup)downloadBlob(state.pendingFile,`${sanitizeFileName(state.current.inspectionId)}_${sanitizeFileName(item.title)}_${Date.now()}.jpg`);
+  if(settings().galleryBackup){
+    let saved=false;
+    try{const result=await saveAcceptedPhotoToGallery(state.pendingFile,item);saved=!!result?.saved;}catch(err){console.error('Gallery backup failed',err);}
+    if(!saved&&!isNativeAndroid())downloadBlob(state.pendingFile,`${sanitizeFileName(state.current.inspectionId)}_${sanitizeFileName(item.title)}_${Date.now()}.jpg`);
+    if(isNativeAndroid()&&!saved)alert('Photo stayed with the inspection, but the separate Gallery backup could not be saved.');
+  }
   show('photosScreen');
 }
 function downloadBlob(blob,name){const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -677,19 +694,67 @@ function downloadSketch(){
   const clone=$('sketchSvg').cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');const xml=new XMLSerializer().serializeToString(clone);const blob=new Blob([xml],{type:'image/svg+xml'});downloadBlob(blob,`${sanitizeFileName(state.current.inspectionId)}_2D_Sketch.svg`);
 }
 function startVoice(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('commandMessage').textContent='Voice entry is not available in this browser.';return;}
-  const r=new SR();r.lang='en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
-  $('voiceBtn').disabled=true;$('commandMessage').textContent='Listening… Speak the complete wall and story command.';
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){
+    $('commandMessage').textContent='Voice entry is not available in this browser.';
+    return;
+  }
+
+  const r=new SR();
+  r.lang='en-US';
+  r.interimResults=false;
+  r.continuous=false;
+  r.maxAlternatives=3;
+
+  $('voiceBtn').disabled=true;
+  $('commandMessage').textContent='Listening... Speak the complete wall and story command.';
+
   r.onresult=e=>{
     const resultIndex=Number.isInteger(e.resultIndex)?e.resultIndex:0;
     const heard=e.results[resultIndex]?.[0]?.transcript||e.results[0][0].transcript;
     const result=interpretVoice(heard);
+
     $('commandInput').value=result.canonical||cleanSpeechText(heard);
-    if(applyInterpretedEvents(result,{heard,source:'voice'}))$('commandInput').value='';
+
+    if(applyInterpretedEvents(result,{heard,source:'voice'})){
+      $('commandInput').value='';
+    }
   };
-  r.onerror=e=>{$('commandMessage').textContent=e.error==='not-allowed'?'Microphone permission was blocked. Allow microphone access and try again.':'Voice entry did not complete. Try speaking the full command again.';};
-  r.onend=()=>{$('voiceBtn').disabled=false;};
-  try{r.start();}catch{$('voiceBtn').disabled=false;$('commandMessage').textContent='Voice entry could not start. Try again.';}
+
+  r.onerror=e=>{
+    $('voiceBtn').disabled=false;
+
+    const error=e&&e.error?e.error:'unknown';
+
+    if(error==='not-allowed'){
+      $('commandMessage').textContent=
+        'Voice recognition could not start. Android microphone permission is already enabled. Close OrganizeALot, reopen it, and try Speak & Apply again.';
+    }else if(error==='no-speech'){
+      $('commandMessage').textContent=
+        'I did not hear a command. Please tap Speak & Apply and try again.';
+    }else if(error==='audio-capture'){
+      $('commandMessage').textContent=
+        'The microphone could not be accessed. Make sure another app is not using the microphone and try again.';
+    }else if(error==='network'){
+      $('commandMessage').textContent=
+        'Speech recognition could not reach the recognition service. Check your connection and try again.';
+    }else{
+      $('commandMessage').textContent=
+        'Voice recognition error: '+error+'. Please try again.';
+    }
+  };
+
+  r.onend=()=>{
+    $('voiceBtn').disabled=false;
+  };
+
+  try{
+    r.start();
+  }catch(err){
+    $('voiceBtn').disabled=false;
+    $('commandMessage').textContent=
+      'Voice entry could not start: '+(err?.message||'unknown error')+'. Try again.';
+  }
 }
 function departureCheck(){
   const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);
