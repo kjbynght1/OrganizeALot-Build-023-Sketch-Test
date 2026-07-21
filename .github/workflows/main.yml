@@ -20,7 +20,7 @@ jobs:
           cache: npm
 
       - name: Install web dependencies
-        run: npm ci
+        run: npm install --package-lock=false --registry=https://registry.npmjs.org/
 
       - name: Sync Capacitor Android project
         run: npx cap sync android
