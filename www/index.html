@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>OrganizeALot Build 023 + Order Import & Field Sheet</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="app-header">
+  <div>
+    <h1>OrganizeALot</h1>
+    <p>Inspection Assistant · Build 023 + Order Import & Field Sheet</p>
+  </div>
+  <button id="installBtn" class="small hidden">Install</button>
+</header>
+
+<main>
+  <section id="homeScreen" class="screen active">
+    <div class="hero-card">
+      <h2>Start an Inspection</h2>
+      <p>Build 023 keeps the inspection workflow and now adds NIIS order screenshot import plus a two-sided printable field sheet.</p>
+    </div>
+    <div class="grid">
+      <button class="tile" data-type="NIIS Residential">🏠<span>NIIS Residential</span><small>Photos + 2D sketch</small></button>
+      <button class="tile preferred" data-type="Preferred Reports">📋<span>Preferred Reports</span><small>13-section workflow</small></button>
+      <button class="tile obs" data-type="OBS">🚗<span>OBS</span><small>Exterior-only inspection</small></button>
+    </div>
+
+    <h3>Resume Inspections</h3>
+    <div id="resumeList" class="saved-list"></div>
+
+    <details id="archiveDetails" class="archive-card">
+      <summary>Archived Inspections</summary>
+      <div id="archiveList" class="saved-list"></div>
+    </details>
+  </section>
+
+  <section id="setupScreen" class="screen">
+    <button class="back" data-screen="homeScreen">← Back</button>
+    <h2 id="setupTitle">New Inspection</h2>
+    <label>Inspection ID
+      <input id="inspectionId" placeholder="Example: NIIS-12345" autocomplete="off" />
+    </label>
+    <label>Property Address
+      <input id="address" placeholder="Street, city, state ZIP" autocomplete="street-address" />
+    </label>
+    <label>Insured / Customer
+      <input id="insuredName" placeholder="Optional" autocomplete="name" />
+    </label>
+    <label>Inspector
+      <input id="inspector" value="Chris Roberts" autocomplete="name" />
+    </label>
+    <div class="card order-import-card">
+      <strong>Have an NIIS order screenshot?</strong>
+      <p class="muted small-text">Import the screenshot, let OrganizeALot read the order, then review every field before using it.</p>
+      <button id="setupImportOrderBtn" class="secondary wide" type="button">📄 Import Order Screenshot</button>
+    </div>
+    <div class="button-row">
+      <button id="setupWazeBtn" class="secondary">Open Waze</button>
+      <button id="startBtn" class="primary">Start Inspection</button>
+    </div>
+  </section>
+
+  <section id="orderImportScreen" class="screen">
+    <div class="dash-top">
+      <button id="orderImportBackBtn" class="back" type="button">← Back</button>
+      <button id="saveOrderInfoBtn" class="secondary" type="button">Save Details</button>
+    </div>
+    <h2>Order Screenshot / Field Sheet</h2>
+    <div class="notice">
+      <strong>Review before saving.</strong> Screenshot reading is tuned for NIIS order screens. OCR can misread numbers, so check the Inspection ID, address, dates, year built, square footage, and policy information.
+    </div>
+    <div class="card">
+      <h3>1) Choose the order screenshot</h3>
+      <input id="orderScreenshotInput" type="file" accept="image/*" />
+      <img id="orderScreenshotPreview" class="order-preview hidden" alt="Order screenshot preview" />
+      <button id="readOrderScreenshotBtn" class="primary wide" type="button" disabled>Read Screenshot</button>
+      <div id="orderOcrStatus" class="muted small-text order-status">No screenshot selected.</div>
+    </div>
+
+    <div class="card">
+      <h3>2) Review the information</h3>
+      <div class="order-grid">
+        <label>Inspection ID<input id="orderInspectionId" autocomplete="off" /></label>
+        <label>Policy #<input id="orderPolicyNumber" autocomplete="off" /></label>
+        <label>Valuation ID<input id="orderValuationId" autocomplete="off" /></label>
+        <label>Insured<input id="orderInsuredName" autocomplete="off" /></label>
+        <label class="span-2">Street Address<input id="orderStreetAddress" autocomplete="street-address" /></label>
+        <label class="span-2">City / State / ZIP<input id="orderCityStateZip" autocomplete="off" /></label>
+        <label>Phone<input id="orderPhone" inputmode="tel" /></label>
+        <label>County<input id="orderCounty" /></label>
+        <label>Date Ordered<input id="orderDateOrdered" placeholder="MM/DD/YYYY" /></label>
+        <label>Date Due<input id="orderDateDue" placeholder="MM/DD/YYYY" /></label>
+        <label>Date Effective<input id="orderDateEffective" placeholder="MM/DD/YYYY" /></label>
+        <label>Year Built<input id="orderYearBuilt" inputmode="numeric" /></label>
+        <label>Square Footage<input id="orderSquareFeet" inputmode="numeric" /></label>
+        <label>Coverage A<input id="orderCoverageA" /></label>
+        <label class="span-2">Client<input id="orderClient" /></label>
+        <label class="span-2">Report Type<input id="orderReportType" /></label>
+        <label>Preferred Contact<input id="orderPreferredContact" /></label>
+        <label class="checkbox-row order-check"><input id="orderAppointmentRequired" type="checkbox" /> Appointment required</label>
+      </div>
+      <div class="button-row">
+        <button id="applyOrderToInspectionBtn" class="primary" type="button">Use These Details</button>
+        <button id="printOrderFieldSheetBtn" class="secondary" type="button">🖨 Print Field Sheet</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="dashboardScreen" class="screen">
+    <div class="dash-top">
+      <button class="back" data-screen="homeScreen">← Inspections</button>
+      <button id="saveBtn" class="secondary">Save</button>
+    </div>
+    <h2 id="dashTitle">Inspection</h2>
+    <p id="dashMeta" class="muted"></p>
+
+    <div class="dashboard-grid">
+      <button id="wazeBtn" class="dashboard-action">🧭<span>Waze</span><small>Navigate to property</small></button>
+      <button id="photosBtn" class="dashboard-action">📷<span>Photos</span><small id="photoProgressText">0 required complete</small></button>
+      <button id="sketchBtn" class="dashboard-action">📐<span>2D Sketch</span><small id="sketchSummaryText">No sketch yet</small></button>
+      <button id="fieldSheetBtn" class="dashboard-action">🖨<span>Field Sheet</span><small>Order info + graph on back</small></button>
+      <button id="reviewBtn" class="dashboard-action">✅<span>Departure Check</span><small>Review missing items</small></button>
+    </div>
+
+    <div id="obsNotice" class="notice hidden"><strong>OBS exterior-only workflow.</strong> The 2D sketch is not required.</div>
+
+    <div class="actions">
+      <button id="exportBtn" class="secondary">Export Inspection Backup</button>
+      <button id="deleteInspectionBtn" class="danger">Delete Inspection</button>
+    </div>
+  </section>
+
+  <section id="photosScreen" class="screen">
+    <div class="dash-top">
+      <button class="back" data-screen="dashboardScreen">← Dashboard</button>
+      <button id="photosSaveBtn" class="secondary">Save</button>
+    </div>
+    <h2>Photo Checklist</h2>
+    <p class="muted">Take photos in any order. Each item allows unlimited photos.</p>
+    <div id="photoSections"></div>
+  </section>
+
+  <section id="cameraScreen" class="screen">
+    <button class="back" data-screen="photosScreen">← Photo List</button>
+    <h2 id="cameraTitle">Photo</h2>
+    <p id="cameraHelp" class="muted"></p>
+    <div class="capture-box">
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" />
+      <img id="cameraPreview" class="hidden" alt="Photo preview" />
+    </div>
+    <div id="cameraStatus" class="notice hidden"></div>
+    <label>Photo note
+      <textarea id="photoNote" rows="3" placeholder="Optional"></textarea>
+    </label>
+    <div class="actions">
+      <button id="usePhotoBtn" class="primary" disabled>Use Photo</button>
+      <button id="retakePhotoBtn" class="secondary">Retake</button>
+      <button id="cannotGetPhotoBtn" class="warning">Cannot Get Required Photo</button>
+    </div>
+  </section>
+
+  <section id="sketchScreen" class="screen">
+    <div class="dash-top">
+      <button class="back" data-screen="dashboardScreen">← Dashboard</button>
+      <button type="button" id="saveSketchBtn" class="secondary">Save Sketch</button>
+    </div>
+    <h2>2D NIIS Reference Sketch</h2>
+    <div class="notice">
+      <strong>2D first.</strong> Enter wall runs as Forward, Right, Back, or Left. When the same house changes height, say <strong>“Begin 1 story”</strong> or <strong>“Begin 2 story”</strong> at that corner. It stays one structure and the app divides the square footage by story section. Detached guest houses, detached garages, and outbuildings automatically begin at least <strong>15 ft away</strong> from the existing sketch.
+    </div>
+
+    <div class="sketch-layout">
+      <div class="sketch-controls">
+        <div class="card">
+          <h3>Structure / Section</h3>
+          <label>Name
+            <input id="shapeName" placeholder="Example: Main House - 2 Story Section" />
+          </label>
+          <label>Type
+            <select id="shapeType">
+              <option value="main_living">Main House Living Area</option>
+              <option value="other_living">Detached Guest House / Other Living</option>
+              <option value="attached_garage">Attached Garage</option>
+              <option value="covered_porch">Covered Porch</option>
+              <option value="deck">Deck / Uncovered Porch</option>
+              <option value="detached_garage">Detached Garage</option>
+              <option value="outbuilding">Outbuilding</option>
+            </select>
+          </label>
+          <label>Stories for the next wall run
+            <input id="shapeStories" type="number" min="0.25" max="10" step="0.25" value="1" />
+            <small class="muted">Changing this after measurements marks a story transition at the current corner—not a new building.</small>
+          </label>
+          <div class="button-row">
+            <button type="button" id="newShapeBtn" class="primary">Add New Section</button>
+            <button type="button" id="updateShapeBtn" class="secondary">Set Section / Next Story</button>
+          </div>
+          <label>Current Section
+            <select id="shapeSelect"></select>
+          </label>
+        </div>
+
+        <div class="card">
+          <h3>Add One Measurement</h3>
+          <div class="measurement-grid">
+            <button class="direction active" data-dir="F">↑ Forward</button>
+            <button class="direction" data-dir="R">→ Right</button>
+            <button class="direction" data-dir="B">↓ Back</button>
+            <button class="direction" data-dir="L">← Left</button>
+          </div>
+          <label>Feet
+            <input id="segmentFeet" type="number" min="0.1" max="1000" step="0.1" inputmode="decimal" placeholder="16" />
+          </label>
+          <button type="button" id="addSegmentBtn" class="primary wide">Add Measurement</button>
+        </div>
+
+        <div class="card">
+          <h3>Fast Measurement Entry</h3>
+          <p class="muted small-text">Example: <strong>17 feet forward, begin 1 story, 12 feet right</strong>. Voice commands are applied immediately. “Write” is corrected to “Right.”</p>
+          <textarea id="commandInput" rows="3" placeholder="17 feet forward, begin 1 story, 12 feet right"></textarea>
+          <button type="button" id="addCommandBtn" class="primary wide">Add Command</button>
+        </div>
+
+        <div class="card">
+          <h3>Section Tools</h3>
+          <div class="button-row wrap">
+            <button type="button" id="undoSegmentBtn" class="secondary">Undo Last</button>
+            <button type="button" id="closeShapeBtn" class="secondary">Close to Start</button>
+            <button type="button" id="clearShapeBtn" class="warning">Clear Section</button>
+            <button type="button" id="deleteShapeBtn" class="danger">Delete Section</button>
+          </div>
+          <button type="button" id="voiceBtn" class="primary wide voice-draw-btn">🎤 Speak & Apply</button>
+          <div id="commandMessage" class="muted small-text"></div>
+        </div>
+      </div>
+
+      <div class="sketch-display">
+        <div class="sketch-toolbar">
+          <button type="button" id="downloadSvgBtn" class="secondary">Download Sketch</button>
+          <button type="button" id="printSketchBtn" class="secondary">Print</button>
+        </div>
+        <div id="sketchCanvasWrap">
+          <svg id="sketchSvg" viewBox="0 0 800 600" role="img" aria-label="Property measurement sketch"></svg>
+        </div>
+        <div id="selectedShapeStats" class="stats-card"></div>
+        <div id="totalsBox" class="totals-grid"></div>
+        <div class="card">
+          <h3>Measurement List</h3>
+          <div id="segmentList"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="reviewScreen" class="screen">
+    <button class="back" data-screen="dashboardScreen">← Dashboard</button>
+    <h2>Departure Check</h2>
+    <div id="reviewResults"></div>
+  </section>
+
+  <section id="settingsScreen" class="screen">
+    <button class="back" data-screen="homeScreen">← Back</button>
+    <h2>Settings</h2>
+    <label class="checkbox-row"><input id="galleryBackupSetting" type="checkbox" /> Save a separate full-size backup to the phone Gallery after “Use Photo”</label>
+    <p class="muted small-text">In the Android app, backups save to Pictures → OrganizeALot → Inspection ID. In the web build, OrganizeALot uses a normal download instead.</p>
+    <button id="saveSettingsBtn" class="primary">Save Settings</button>
+  </section>
+</main>
+
+<footer>
+  <button id="settingsBtn" class="footer-button">Settings</button>
+  <span>OrganizeALot v2.1.0 Build 023 + Order Import / Field Sheet</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
