@@ -190,7 +190,7 @@ function parseNiisOrderText(raw){
   for(const key of ['policyNumber','valuationId','insuredName','streetAddress','cityStateZip','phone','client','county']){
     let v=oi[key];for(const label of labels){const idx=v.search(new RegExp('\\s+'+label+'\\s*[:#]','i'));if(idx>0)v=v.slice(0,idx).trim();}oi[key]=v;
   }
-  return oi;
+  return oi; 
 }
 function mergeOrderInfo(existing,extracted){const out={...blankOrderInfo(),...existing};Object.entries(extracted||{}).forEach(([k,v])=>{if(v!==''&&v!==false)out[k]=v;if(k==='appointmentRequired'&&v===true)out[k]=true;});return out;}
 function loadOcrScript(){
