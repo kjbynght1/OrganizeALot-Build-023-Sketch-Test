@@ -749,7 +749,8 @@ async function startVoice(){
   }finally{
     $('voiceBtn').disabled=false;
   }
-function departureCheck(){
+}
+  function departureCheck(){
   const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);
   let html=`<div class="notice"><strong>${items.length-missing.length}/${items.length} photo items complete.</strong></div>`;
   if(missing.length)html+=`<div class="card"><h3>Missing Required Photos</h3><ul>${missing.map(i=>`<li>${escapeHtml(i.section)} — ${escapeHtml(i.title)}</li>`).join('')}</ul></div>`;
