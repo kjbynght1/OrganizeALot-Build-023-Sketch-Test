@@ -704,7 +704,10 @@ function startVoice(){
     $('commandInput').value=result.canonical||cleanSpeechText(heard);
     if(applyInterpretedEvents(result,{heard,source:'voice'}))$('commandInput').value='';
   };
-  r.onerror=e=>{$('commandMessage').textContent=e.error==='not-allowed'?'Microphone permission was blocked. Allow microphone access and try again.':'Voice entry did not complete. Try speaking the full command again.';};
+r.onerror=e=>{
+  console.error('Speech recognition error:',e.error,e);
+  $('commandMessage').textContent='Voice error: '+e.error;
+};
   r.onend=()=>{$('voiceBtn').disabled=false;};
   try{r.start();}catch{$('voiceBtn').disabled=false;$('commandMessage').textContent='Voice entry could not start. Try again.';}
 }
