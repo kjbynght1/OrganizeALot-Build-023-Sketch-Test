@@ -275,13 +275,224 @@ async function loadPhotoCard(photoId,item,box){
   };
   box.appendChild(card);
 }
-function openCamera(itemKey){
-  state.pendingItem=itemKey;state.pendingFile=null;state.pendingDataUrl=null;
-  const item=state.current.photoItems[itemKey];$('cameraTitle').textContent=item.title;$('cameraHelp').textContent=item.help;$('photoNote').value=item.note||'';
-  $('cameraInput').value='';$('cameraPreview').classList.add('hidden');$('cameraStatus').classList.add('hidden');$('usePhotoBtn').disabled=true;show('cameraScreen');
-  setTimeout(()=>$('cameraInput').click(),150);
+async function openCamera(itemKey){
+  state.pendingItem=itemKey;
+  state.pendingFile=null;
+  state.pendingDataUrl=null;
+
+  const item=state.current.photoItems[itemKey];
+  $('cameraTitle').textContent=item.title;
+  $('cameraHelp').textContent=item.help;
+  $('photoNote').value=item.note||'';
+
+  $('cameraInput').value='';
+  $('cameraPreview').classList.add('hidden');
+  $('cameraStatus').classList.remove('hidden');
+  $('cameraStatus').innerHTML='<strong>Opening camera…</strong>';
+  $('usePhotoBtn').disabled=true;
+  show('cameraScreen');
+
+  const Camera=
+    window.Capacitor&&typeof window.Capacitor.registerPlugin==='function'
+      ? window.Capacitor.registerPlugin('Camera')
+      : null;
+
+  if(!Camera||!isNativeAndroid()){
+    $('cameraStatus').classList.add('hidden');
+    $('cameraInput').click();
+    return;
+  }
+
+  try{
+    const photo=await Camera.takePhoto({
+      quality:92,
+      correctOrientation:true,
+      saveToGallery:false,
+      editable:'no',
+      includeMetadata:true
+    });
+
+    if(!photo?.webPath){
+      throw new Error('The camera did not return a photo.');
+    }
+
+    const response=await fetch(photo.webPath);
+
+    if(!response.ok){
+      throw new Error('The camera photo could not be loaded.');
+    }
+
+    const blob=await response.blob();
+    const format=photo.metadata?.format||'jpeg';
+    const type=blob.type||`image/${format}`;
+
+    const file=new File(
+      [blob],
+      `OrganizeALot_${Date.now()}.${extensionForMime(type)}`,
+      {type,lastModified:Date.now()}
+    );
+
+    await preparePendingPhoto(file,photo.metadata||{});
+  }catch(error){
+    const message=String(error?.message||error||'');
+
+    if(message.toLowerCase().includes('cancel')){
+      show('photosScreen');
+      return;
+    }
+
+    console.error('Camera error:',error);
+    $('cameraStatus').innerHTML=
+      `<strong>Camera could not open.</strong> ${escapeHtml(message||'Unknown error')}`;
+    $('cameraStatus').classList.remove('hidden');
+  }
 }
-function readAsDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});}
+
+function readAsDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+}
+
+async function preparePendingPhoto(file,metadata={}){
+  state.pendingFile=file;
+  state.pendingDataUrl=await readAsDataUrl(file);
+
+  $('cameraPreview').src=state.pendingDataUrl;
+  $('cameraPreview').classList.remove('hidden');
+  $('cameraStatus').innerHTML='<strong>Checking photo quality…</strong>';
+  $('cameraStatus').classList.remove('hidden');
+
+  const check=await checkPhotoQuality(state.pendingDataUrl,metadata);
+
+  if(check.problems.length){
+    $('cameraStatus').innerHTML=
+      `<strong>Retake recommended.</strong> ${escapeHtml(check.problems.join(' '))}
+       <br><small>${check.width} × ${check.height}. You may still use the photo if it is acceptable.</small>`;
+  }else{
+    $('cameraStatus').innerHTML=
+      `<strong>Looks good.</strong>
+       <br><small>${check.width} × ${check.height}. Photo is ready to use.</small>`;
+  }
+
+  $('usePhotoBtn').disabled=false;
+}
+
+function checkPhotoQuality(dataUrl,metadata={}){
+  return new Promise(resolve=>{
+    const img=new Image();
+
+    img.onload=()=>{
+      const width=img.naturalWidth||0;
+      const height=img.naturalHeight||0;
+      const scale=Math.min(1,320/Math.max(width,height));
+      const w=Math.max(1,Math.round(width*scale));
+      const h=Math.max(1,Math.round(height*scale));
+
+      const canvas=document.createElement('canvas');
+      canvas.width=w;
+      canvas.height=h;
+
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      ctx.drawImage(img,0,0,w,h);
+
+      const pixels=ctx.getImageData(0,0,w,h).data;
+      const gray=new Float32Array(w*h);
+
+      let brightnessTotal=0;
+      let darkCount=0;
+      let brightCount=0;
+
+      for(let i=0,p=0;i<pixels.length;i+=4,p++){
+        const lum=
+          0.2126*pixels[i]+
+          0.7152*pixels[i+1]+
+          0.0722*pixels[i+2];
+
+        gray[p]=lum;
+        brightnessTotal+=lum;
+
+        if(lum<45)darkCount++;
+        if(lum>245)brightCount++;
+      }
+
+      const pixelCount=w*h;
+      const averageBrightness=brightnessTotal/pixelCount;
+      const darkPercent=darkCount/pixelCount;
+      const brightPercent=brightCount/pixelCount;
+
+      let lapTotal=0;
+      let lapSquared=0;
+      let lapCount=0;
+
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=y*w+x;
+          const lap=
+            4*gray[i]-
+            gray[i-1]-
+            gray[i+1]-
+            gray[i-w]-
+            gray[i+w];
+
+          lapTotal+=lap;
+          lapSquared+=lap*lap;
+          lapCount++;
+        }
+      }
+
+      const lapMean=lapCount?lapTotal/lapCount:0;
+      const blurScore=lapCount
+        ? lapSquared/lapCount-lapMean*lapMean
+        : 0;
+
+      const problems=[];
+
+      if(width<1000||height<700){
+        problems.push('The photo resolution appears low.');
+      }
+
+      if(averageBrightness<55||darkPercent>0.55){
+        problems.push('The photo may be too dark.');
+      }
+
+      if(averageBrightness>225||brightPercent>0.22){
+        problems.push('The photo may have excessive glare or overexposure.');
+      }
+
+      if(blurScore<90){
+        problems.push('The photo may be blurry.');
+      }
+
+      resolve({
+        width,
+        height,
+        averageBrightness,
+        blurScore,
+        problems
+      });
+    };
+
+    img.onerror=()=>{
+      resolve({
+        width:0,
+        height:0,
+        problems:['The photo could not be checked automatically.']
+      });
+    };
+
+    img.src=dataUrl;
+  });
+}
+
+async function onCameraChange(e){
+  const file=e.target.files?.[0];
+  if(!file)return;
+  await preparePendingPhoto(file,{});
+}
 async function onCameraChange(e){
   const file=e.target.files?.[0];if(!file)return;
   state.pendingFile=file;state.pendingDataUrl=await readAsDataUrl(file);$('cameraPreview').src=state.pendingDataUrl;$('cameraPreview').classList.remove('hidden');$('usePhotoBtn').disabled=false;
@@ -782,7 +993,7 @@ function wireEvents(){
   $('setupWazeBtn').onclick=()=>openWaze($('address').value.trim());$('wazeBtn').onclick=()=>openWaze(state.current?.address);
   $('saveBtn').onclick=()=>{saveInspection();renderDashboard();};$('photosSaveBtn').onclick=()=>{saveInspection();renderPhotos();};$('photosBtn').onclick=()=>show('photosScreen');$('sketchBtn').onclick=()=>show('sketchScreen');$('reviewBtn').onclick=departureCheck;$('exportBtn').onclick=exportInspection;
   $('deleteInspectionBtn').onclick=()=>{if(!state.current||!confirm(`Delete inspection ${state.current.inspectionId}?`))return;localStorage.removeItem(state.current.key);state.current=null;show('homeScreen');};
-  $('cameraInput').addEventListener('change',onCameraChange);$('usePhotoBtn').onclick=usePendingPhoto;$('retakePhotoBtn').onclick=()=>{$('cameraInput').value='';$('cameraInput').click();};
+  $('cameraInput').addEventListener('change',onCameraChange);$('usePhotoBtn').onclick=usePendingPhoto;$('retakePhotoBtn').onclick=()=>openCamera(state.pendingItem);=()=>{$('cameraInput').value='';$('cameraInput').click();};
   $('cannotGetPhotoBtn').onclick=()=>{const item=state.current.photoItems[state.pendingItem];item.cannotGet=true;item.note=$('photoNote').value.trim()||'Photo could not be obtained.';saveInspection();show('photosScreen');};
   document.querySelectorAll('.direction').forEach(b=>b.onclick=()=>{state.selectedDir=b.dataset.dir;document.querySelectorAll('.direction').forEach(x=>x.classList.toggle('active',x===b));});
   $('addSegmentBtn').onclick=()=>{if(addSegment(state.selectedDir,$('segmentFeet').value))$('segmentFeet').value='';else alert('Enter a valid measurement in feet.');};
