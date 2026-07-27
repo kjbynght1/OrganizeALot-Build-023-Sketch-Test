@@ -693,25 +693,62 @@ function renderTotals(){
 function downloadSketch(){
   const clone=$('sketchSvg').cloneNode(true);clone.setAttribute('xmlns','http://www.w3.org/2000/svg');const xml=new XMLSerializer().serializeToString(clone);const blob=new Blob([xml],{type:'image/svg+xml'});downloadBlob(blob,`${sanitizeFileName(state.current.inspectionId)}_2D_Sketch.svg`);
 }
-function startVoice(){
-  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('commandMessage').textContent='Voice entry is not available in this browser.';return;}
-  const r=new SR();r.lang='en-US';r.interimResults=false;r.continuous=false;r.maxAlternatives=1;
-  $('voiceBtn').disabled=true;$('commandMessage').textContent='Listening… Speak the complete wall and story command.';
-  r.onresult=e=>{
-    const resultIndex=Number.isInteger(e.resultIndex)?e.resultIndex:0;
-    const heard=e.results[resultIndex]?.[0]?.transcript||e.results[0][0].transcript;
+async function startVoice(){
+  const SpeechRecognition =
+    window.Capacitor?.Plugins?.SpeechRecognition ||
+    (typeof window.Capacitor?.registerPlugin === 'function'
+      ? window.Capacitor.registerPlugin('SpeechRecognition')
+      : null);
+
+  if(!SpeechRecognition){
+    $('commandMessage').textContent='Native voice recognition is not available.';
+    return;
+  }
+
+  $('voiceBtn').disabled=true;
+  $('commandMessage').textContent='Listening… Speak the complete wall and story command.';
+
+  try{
+    const permission=await SpeechRecognition.requestPermissions();
+
+    if(permission.speechRecognition!=='granted'){
+      $('commandMessage').textContent='Microphone permission was not granted.';
+      return;
+    }
+
+    const availability=await SpeechRecognition.available();
+
+    if(!availability.available){
+      $('commandMessage').textContent='Speech recognition is not available on this phone.';
+      return;
+    }
+
+    const response=await SpeechRecognition.start({
+      language:'en-US',
+      maxResults:1,
+      partialResults:false,
+      popup:false
+    });
+
+    const heard=response?.matches?.[0]||'';
+
+    if(!heard){
+      $('commandMessage').textContent='No speech was heard. Please try again.';
+      return;
+    }
+
     const result=interpretVoice(heard);
     $('commandInput').value=result.canonical||cleanSpeechText(heard);
-    if(applyInterpretedEvents(result,{heard,source:'voice'}))$('commandInput').value='';
-  };
-r.onerror=e=>{
-  console.error('Speech recognition error:',e.error,e);
-  $('commandMessage').textContent='Voice error: '+e.error;
-};
-  
-  r.onend=()=>{$('voiceBtn').disabled=false;};
-  try{r.start();}catch{$('voiceBtn').disabled=false;$('commandMessage').textContent='Voice entry could not start. Try again.';}
-}
+
+    if(applyInterpretedEvents(result,{heard,source:'voice'})){
+      $('commandInput').value='';
+    }
+  }catch(error){
+    console.error('Native speech error:',error);
+    $('commandMessage').textContent='Voice error: '+(error?.message||error?.code||'unknown');
+  }finally{
+    $('voiceBtn').disabled=false;
+  }
 function departureCheck(){
   const c=state.current;const items=Object.values(c.photoItems||{});const missing=items.filter(i=>!i.photoIds.length&&!i.cannotGet);const overrides=items.filter(i=>i.cannotGet);const totals=calculateTotals(c.shapes||[]);
   let html=`<div class="notice"><strong>${items.length-missing.length}/${items.length} photo items complete.</strong></div>`;
