@@ -493,7 +493,7 @@ async function onCameraChange(e){
   if(!file)return;
   await preparePendingPhoto(file,{});
 }
-async function onCameraChange(e){
+async function onCameraChangeLegacy(e){
   const file=e.target.files?.[0];if(!file)return;
   state.pendingFile=file;state.pendingDataUrl=await readAsDataUrl(file);$('cameraPreview').src=state.pendingDataUrl;$('cameraPreview').classList.remove('hidden');$('usePhotoBtn').disabled=false;
   $('cameraStatus').innerHTML=`<strong>Preview ready.</strong> Check framing, blur, glare, darkness, and roof sun distortion before using the photo.`;$('cameraStatus').classList.remove('hidden');
@@ -993,7 +993,7 @@ function wireEvents(){
   $('setupWazeBtn').onclick=()=>openWaze($('address').value.trim());$('wazeBtn').onclick=()=>openWaze(state.current?.address);
   $('saveBtn').onclick=()=>{saveInspection();renderDashboard();};$('photosSaveBtn').onclick=()=>{saveInspection();renderPhotos();};$('photosBtn').onclick=()=>show('photosScreen');$('sketchBtn').onclick=()=>show('sketchScreen');$('reviewBtn').onclick=departureCheck;$('exportBtn').onclick=exportInspection;
   $('deleteInspectionBtn').onclick=()=>{if(!state.current||!confirm(`Delete inspection ${state.current.inspectionId}?`))return;localStorage.removeItem(state.current.key);state.current=null;show('homeScreen');};
-  $('cameraInput').addEventListener('change',onCameraChange);$('usePhotoBtn').onclick=usePendingPhoto;$('retakePhotoBtn').onclick=()=>openCamera(state.pendingItem);=()=>{$('cameraInput').value='';$('cameraInput').click();};
+  $('cameraInput').addEventListener('change',onCameraChange);$('usePhotoBtn').onclick=usePendingPhoto;$('retakePhotoBtn').onclick=()=>openCamera(state.pendingItem);
   $('cannotGetPhotoBtn').onclick=()=>{const item=state.current.photoItems[state.pendingItem];item.cannotGet=true;item.note=$('photoNote').value.trim()||'Photo could not be obtained.';saveInspection();show('photosScreen');};
   document.querySelectorAll('.direction').forEach(b=>b.onclick=()=>{state.selectedDir=b.dataset.dir;document.querySelectorAll('.direction').forEach(x=>x.classList.toggle('active',x===b));});
   $('addSegmentBtn').onclick=()=>{if(addSegment(state.selectedDir,$('segmentFeet').value))$('segmentFeet').value='';else alert('Enter a valid measurement in feet.');};
