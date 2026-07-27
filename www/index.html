@@ -74,11 +74,11 @@
       <strong>Review before saving.</strong> Screenshot reading is tuned for NIIS order screens. OCR can misread numbers, so check the Inspection ID, address, dates, year built, square footage, and policy information.
     </div>
     <div class="card">
-      <h3>1) Choose the order screenshot</h3>
-      <input id="orderScreenshotInput" type="file" accept="image/*" />
+     <h3>1) Choose the inspection paperwork</h3>
+     <input id="orderScreenshotInput" type="file" accept="image/*,.heic,.pdf,.docx,.txt,.rtf,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/rtf,text/csv" />
       <img id="orderScreenshotPreview" class="order-preview hidden" alt="Order screenshot preview" />
-      <button id="readOrderScreenshotBtn" class="primary wide" type="button" disabled>Read Screenshot</button>
-      <div id="orderOcrStatus" class="muted small-text order-status">No screenshot selected.</div>
+      <button id="readOrderScreenshotBtn" class="primary wide" type="button" disabled>Read Paperwork</button>
+      <div id="orderOcrStatus" class="muted small-text order-status">No paperwork selected.</div>
     </div>
 
     <div class="card">
