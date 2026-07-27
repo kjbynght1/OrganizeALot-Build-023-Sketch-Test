@@ -433,6 +433,154 @@ async function onOrderPaperworkChange(e){
   $('orderOcrStatus').textContent=
     `${file.name} ready. Tap Read Paperwork.`;
 }
+function parseCsvRows(text){
+  const rows=[];
+  let row=[];
+  let cell='';
+  let quoted=false;
+  const source=String(text||'').replace(/^\uFEFF/,'');
+
+  for(let i=0;i<source.length;i++){
+    const ch=source[i];
+
+    if(quoted){
+      if(ch==='"'){
+        if(source[i+1]==='"'){
+          cell+='"';
+          i++;
+        }else{
+          quoted=false;
+        }
+      }else{
+        cell+=ch;
+      }
+      continue;
+    }
+
+    if(ch==='"'){
+      quoted=true;
+    }else if(ch===','){
+      row.push(cell);
+      cell='';
+    }else if(ch==='\n'){
+      row.push(cell);
+      rows.push(row);
+      row=[];
+      cell='';
+    }else if(ch!=='\r'){
+      cell+=ch;
+    }
+  }
+
+  row.push(cell);
+  rows.push(row);
+
+  return rows.filter(r=>r.some(v=>String(v||'').trim()!==''));
+}
+
+function normalizeCsvHeader(value){
+  return String(value||'')
+    .replace(/^\uFEFF/,'')
+    .replace(/[^a-z0-9]/gi,'')
+    .toLowerCase();
+}
+
+function cleanCsvCell(value){
+  return String(value??'')
+    .replace(/\u0000/g,'')
+    .replace(/\t/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function parseOrderCsv(text){
+  const rows=parseCsvRows(text);
+
+  if(rows.length<2){
+    throw new Error('The CSV does not contain a header row and a data row.');
+  }
+
+  const headers=rows[0].map(normalizeCsvHeader);
+
+  const row=rows.slice(1).find(values=>{
+    const joined=values.map(cleanCsvCell).join('');
+    return joined!=='';
+  });
+
+  if(!row){
+    throw new Error('The CSV does not contain an inspection record.');
+  }
+
+  const get=(...names)=>{
+    for(const name of names){
+      const index=headers.indexOf(normalizeCsvHeader(name));
+      if(index>=0){
+        const value=cleanCsvCell(row[index]);
+        if(value!=='')return value;
+      }
+    }
+    return '';
+  };
+
+  const oi=blankOrderInfo();
+
+  oi.inspectionId=get('ID','Inspection ID','InspectionID');
+  oi.insuredName=get('Insured Name','Last Name','LastName');
+  oi.phone=get('Insured Phone','Phone','Phone Number');
+
+  oi.client=get('Client','Carrier');
+  oi.policyNumber=get('Policy','Policy Number','PolicyNumber');
+
+  if(
+    /^\d+$/.test(oi.policyNumber) &&
+    oi.policyNumber.length===11 &&
+    /united services automobile association|usaa/i.test(oi.client)
+  ){
+    oi.policyNumber=oi.policyNumber.padStart(12,'0');
+  }
+
+  oi.streetAddress=get('Address','Street Address','Property Address');
+
+  const city=get('City');
+  const stateValue=get('State');
+  const zip=get('Zip','ZIP Code','Postal Code');
+
+  oi.cityStateZip=[
+    city,
+    stateValue,
+    zip
+  ].filter(Boolean).join(' ').replace(/^([^ ]+) ([A-Z]{2}) /,'$1, $2 ');
+
+  oi.dateDue=get('Date Due','Due Date','DateDue');
+  oi.yearBuilt=get('ClientYrBuilt','Client Year Built','Year Built');
+  oi.squareFeet=get('ClientSqFt','Client Square Feet','Square Feet','Square Footage');
+
+  const coverage=get('ClientCovA','Client Coverage A','Coverage A');
+  if(coverage){
+    const amount=Number(coverage.replace(/[$,]/g,''));
+    oi.coverageA=Number.isFinite(amount)
+      ?`$${amount.toLocaleString('en-US')}`
+      :coverage;
+  }
+
+  const reportType=get('ReportType','Report Type');
+  const reportTypes={
+    '2':'Property Interior/Exterior ITV Report'
+  };
+  oi.reportType=reportTypes[reportType]||reportType;
+
+  const instructions=[
+    get('Field Rep Instructions'),
+    get('Client Instructions'),
+    get('Special Instructions')
+  ].filter(Boolean).join(' ');
+
+  oi.appointmentRequired=
+    /appointment required|need to schedule an appointment/i.test(instructions);
+
+  return oi;
+}
+
 
 async function readOrderPaperwork(){
   const file=state.orderScreenshotFile;
@@ -449,7 +597,7 @@ async function readOrderPaperwork(){
       throw new Error('No readable text was found in this file.');
     }
 
-    const extracted=parseNiisOrderText(text);
+    const extracted=orderFileExtension(file)==='csv'?parseOrderCsv(text):parseNiisOrderText(text);
     setOrderForm(mergeOrderInfo(getOrderForm(),extracted));
 
     const found=Object.entries(extracted)
