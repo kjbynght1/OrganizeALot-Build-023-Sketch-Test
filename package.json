@@ -7,8 +7,10 @@
     "copy": "npx cap copy android"
   },
   "dependencies": {
-    "@capacitor/core": "8.4.2"
-  },
+  "@capacitor/core": "8.4.2",
+  "@capgo/capacitor-speech-recognition": "8.1.3"
+},
+
   "devDependencies": {
     "@capacitor/android": "8.4.2",
     "@capacitor/cli": "8.4.2"
