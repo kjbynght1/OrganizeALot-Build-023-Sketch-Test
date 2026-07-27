@@ -211,6 +211,264 @@ async function readOrderScreenshot(){
   }catch(err){console.error(err);$('orderOcrStatus').textContent=`Could not read the screenshot automatically: ${err.message||err}. You can still type/correct the fields below.`;}
   finally{$('readOrderScreenshotBtn').disabled=false;}
 }
+function orderFileExtension(file){
+  const name=String(file?.name||'');
+  const dot=name.lastIndexOf('.');
+  return dot>=0?name.slice(dot+1).toLowerCase():'';
+}
+
+function isOrderImage(file){
+  const ext=orderFileExtension(file);
+  return String(file?.type||'').startsWith('image/')||
+    ['jpg','jpeg','png','webp','heic','heif'].includes(ext);
+}
+
+function loadOrderScript(src,marker,ready){
+  if(ready())return Promise.resolve();
+
+  return new Promise((resolve,reject)=>{
+    const selector=`script[data-order-lib="${marker}"]`;
+    const existing=document.querySelector(selector);
+
+    if(existing){
+      existing.addEventListener(
+        'load',
+        ()=>ready()?resolve():reject(new Error(`${marker} loaded but was unavailable.`)),
+        {once:true}
+      );
+      existing.addEventListener(
+        'error',
+        ()=>reject(new Error(`${marker} could not be downloaded.`)),
+        {once:true}
+      );
+      return;
+    }
+
+    const script=document.createElement('script');
+    script.src=src;
+    script.async=true;
+    script.dataset.orderLib=marker;
+    script.onload=()=>ready()
+      ?resolve()
+      :reject(new Error(`${marker} loaded but was unavailable.`));
+    script.onerror=()=>reject(
+      new Error(`${marker} could not be downloaded. Check your internet connection.`)
+    );
+    document.head.appendChild(script);
+  });
+}
+
+function rtfToPlainText(rtf){
+  return String(rtf||'')
+    .replace(/\\par[d]?\b/g,'\n')
+    .replace(/\\tab\b/g,'\t')
+    .replace(/\\'([0-9a-fA-F]{2})/g,(_,hex)=>
+      String.fromCharCode(parseInt(hex,16))
+    )
+    .replace(/\\u(-?\d+)\??/g,(_,value)=>{
+      let code=Number(value);
+      if(code<0)code+=65536;
+      return String.fromCharCode(code);
+    })
+    .replace(/\\([{}\\])/g,'$1')
+    .replace(/\\[a-zA-Z]+-?\d* ?/g,'')
+    .replace(/[{}]/g,'')
+    .replace(/\r/g,'')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+
+async function extractImageOrderText(file){
+  const T=await loadOcrScript();
+
+  const result=await T.recognize(file,'eng',{
+    logger:m=>{
+      if(m.status){
+        const pct=Number.isFinite(m.progress)
+          ?` ${Math.round(m.progress*100)}%`
+          :'';
+        $('orderOcrStatus').textContent=`${m.status}${pct}`;
+      }
+    }
+  });
+
+  return result?.data?.text||'';
+}
+
+async function extractPdfOrderText(file){
+  const pdfScript=
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  const workerScript=
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  await loadOrderScript(pdfScript,'pdfjs',()=>!!window.pdfjsLib);
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc=workerScript;
+
+  const data=new Uint8Array(await file.arrayBuffer());
+  const pdf=await window.pdfjsLib.getDocument({data}).promise;
+  const pages=[];
+
+  for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+    $('orderOcrStatus').textContent=
+      `Reading PDF page ${pageNumber} of ${pdf.numPages}…`;
+
+    const page=await pdf.getPage(pageNumber);
+    const content=await page.getTextContent();
+    pages.push(content.items.map(item=>item.str||'').join(' '));
+  }
+
+  let text=pages.join('\n');
+
+  if(text.replace(/\s/g,'').length>=25){
+    return text;
+  }
+
+  const T=await loadOcrScript();
+  const ocrPages=[];
+
+  for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+    const page=await pdf.getPage(pageNumber);
+    const viewport=page.getViewport({scale:1.75});
+    const canvas=document.createElement('canvas');
+
+    canvas.width=Math.ceil(viewport.width);
+    canvas.height=Math.ceil(viewport.height);
+
+    const context=canvas.getContext('2d');
+    await page.render({canvasContext:context,viewport}).promise;
+
+    const result=await T.recognize(canvas,'eng',{
+      logger:m=>{
+        if(m.status){
+          const pct=Number.isFinite(m.progress)
+            ?` ${Math.round(m.progress*100)}%`
+            :'';
+
+          $('orderOcrStatus').textContent=
+            `PDF page ${pageNumber}/${pdf.numPages}: ${m.status}${pct}`;
+        }
+      }
+    });
+
+    ocrPages.push(result?.data?.text||'');
+  }
+
+  return ocrPages.join('\n');
+}
+
+async function extractDocxOrderText(file){
+  const mammothScript=
+    'https://cdn.jsdelivr.net/npm/mammoth@1.12.0/mammoth.browser.min.js';
+
+  await loadOrderScript(mammothScript,'mammoth',()=>!!window.mammoth);
+
+  const result=await window.mammoth.extractRawText({
+    arrayBuffer:await file.arrayBuffer()
+  });
+
+  return result?.value||'';
+}
+
+async function extractOrderPaperworkText(file){
+  const ext=orderFileExtension(file);
+  const type=String(file?.type||'').toLowerCase();
+
+  if(isOrderImage(file)){
+    return extractImageOrderText(file);
+  }
+
+  if(ext==='pdf'||type==='application/pdf'){
+    return extractPdfOrderText(file);
+  }
+
+  if(
+    ext==='docx'||
+    type==='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ){
+    return extractDocxOrderText(file);
+  }
+
+  if(
+    ext==='txt'||
+    ext==='csv'||
+    type.startsWith('text/plain')||
+    type.startsWith('text/csv')
+  ){
+    return file.text();
+  }
+
+  if(ext==='rtf'||type.includes('rtf')){
+    return rtfToPlainText(await file.text());
+  }
+
+  if(ext==='doc'){
+    throw new Error(
+      'Older .doc files cannot be read directly. Save the file as DOCX or PDF and try again.'
+    );
+  }
+
+  throw new Error(`Unsupported paperwork type: .${ext||'unknown'}`);
+}
+
+async function onOrderPaperworkChange(e){
+  const file=e.target.files?.[0];
+  if(!file)return;
+
+  state.orderScreenshotFile=file;
+  $('readOrderScreenshotBtn').disabled=false;
+
+  if(isOrderImage(file)){
+    try{
+      $('orderScreenshotPreview').src=await readAsDataUrl(file);
+      $('orderScreenshotPreview').classList.remove('hidden');
+    }catch{
+      $('orderScreenshotPreview').src='';
+      $('orderScreenshotPreview').classList.add('hidden');
+    }
+  }else{
+    $('orderScreenshotPreview').src='';
+    $('orderScreenshotPreview').classList.add('hidden');
+  }
+
+  $('orderOcrStatus').textContent=
+    `${file.name} ready. Tap Read Paperwork.`;
+}
+
+async function readOrderPaperwork(){
+  const file=state.orderScreenshotFile;
+  if(!file)return;
+
+  $('readOrderScreenshotBtn').disabled=true;
+  $('orderOcrStatus').textContent=
+    'Reading paperwork… First use of PDF, Word, or OCR may take a minute.';
+
+  try{
+    const text=await extractOrderPaperworkText(file);
+
+    if(!String(text||'').trim()){
+      throw new Error('No readable text was found in this file.');
+    }
+
+    const extracted=parseNiisOrderText(text);
+    setOrderForm(mergeOrderInfo(getOrderForm(),extracted));
+
+    const found=Object.entries(extracted)
+      .filter(([key,value])=>key!=='appointmentRequired'&&value)
+      .length+(extracted.appointmentRequired?1:0);
+
+    $('orderOcrStatus').textContent=
+      `Paperwork read complete. ${found} fields found. Please check every field before using it.`;
+  }catch(err){
+    console.error(err);
+    $('orderOcrStatus').textContent=
+      `Could not read the paperwork automatically: ${err.message||err}. `+
+      'You can still type or correct the fields below.';
+  }finally{
+    $('readOrderScreenshotBtn').disabled=false;
+  }
+}
+
+
 function escPrint(v){return escapeHtml(v||'');}
 function printValue(v){return escPrint(v||'');}
 function buildGraphSvg(){
@@ -987,7 +1245,7 @@ function wireEvents(){
   document.querySelectorAll('.tile').forEach(b=>b.onclick=()=>{newInspection(b.dataset.type);$('setupTitle').textContent=`New ${b.dataset.type} Inspection`;$('inspectionId').value='';$('address').value='';$('insuredName').value='';$('inspector').value='Chris Roberts';show('setupScreen');});
   document.querySelectorAll('[data-screen]').forEach(b=>b.onclick=()=>show(b.dataset.screen));
   $('setupImportOrderBtn').onclick=()=>openOrderImport('setupScreen');$('orderImportBackBtn').onclick=()=>show(state.orderReturnScreen||'setupScreen');
-  $('orderScreenshotInput').addEventListener('change',onOrderScreenshotChange);$('readOrderScreenshotBtn').onclick=readOrderScreenshot;
+  $('orderScreenshotInput').addEventListener('change',onOrderPaperworkChange);$('readOrderScreenshotBtn').onclick=readOrderPaperwork;
   $('applyOrderToInspectionBtn').onclick=()=>applyOrderInfo({returnAfter:true});$('saveOrderInfoBtn').onclick=()=>applyOrderInfo({returnAfter:true});$('printOrderFieldSheetBtn').onclick=printFieldSheet;$('fieldSheetBtn').onclick=()=>openOrderImport('dashboardScreen');
   $('startBtn').onclick=()=>{const id=$('inspectionId').value.trim(),address=$('address').value.trim();if(!id||!address){alert('Enter both the Inspection ID and property address.');return;}Object.assign(state.current,{inspectionId:id,address,insuredName:$('insuredName').value.trim(),inspector:$('inspector').value.trim()||'Chris Roberts'});state.current.orderInfo={...blankOrderInfo(),...(state.current.orderInfo||{}),inspectionId:id,insuredName:state.current.insuredName};if(!state.current.orderInfo.streetAddress&&!state.current.orderInfo.cityStateZip)state.current.orderInfo.streetAddress=address;saveInspection();show('dashboardScreen');};
   $('setupWazeBtn').onclick=()=>openWaze($('address').value.trim());$('wazeBtn').onclick=()=>openWaze(state.current?.address);
