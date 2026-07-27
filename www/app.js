@@ -708,9 +708,7 @@ r.onerror=e=>{
   console.error('Speech recognition error:',e.error,e);
   $('commandMessage').textContent='Voice error: '+e.error;
 };
-  console.error('Speech recognition error:',e.error,e);
-  $('commandMessage').textContent='Voice error: '+e.error;
-};
+  
   r.onend=()=>{$('voiceBtn').disabled=false;};
   try{r.start();}catch{$('voiceBtn').disabled=false;$('commandMessage').textContent='Voice entry could not start. Try again.';}
 }
